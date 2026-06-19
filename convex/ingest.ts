@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { action } from "./_generated/server";
 import type { ActionCtx } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { getOrgContext } from "./lib/auth";
 import { rag } from "./lib/ai";
@@ -60,7 +61,10 @@ export const processUpload = action({
     documentId: v.id("documents"),
     chunkCount: v.number(),
   }),
-  handler: async (ctx, args) => {
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ documentId: Id<"documents">; chunkCount: number }> => {
     const { orgId, userId } = await requireAdminOrg(ctx);
 
     const documentId = await ctx.runMutation(
@@ -147,7 +151,10 @@ export const processText = action({
     documentId: v.id("documents"),
     chunkCount: v.number(),
   }),
-  handler: async (ctx, args) => {
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ documentId: Id<"documents">; chunkCount: number }> => {
     const { orgId, userId } = await requireAdminOrg(ctx);
 
     const trimmed = args.text.trim();
