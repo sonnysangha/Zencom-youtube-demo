@@ -11,6 +11,8 @@ const isPublicRoute = createRouteMatcher([
   // Phase 2: embeddable widget runtime (no Clerk auth — uses publicKey + token).
   "/widget(.*)",
   "/embed.js",
+  // Phase 3: public help center (reader + search), tenant-scoped by publicKey.
+  "/help(.*)",
 ]);
 
 export default clerkMiddleware(async (auth, request) => {
