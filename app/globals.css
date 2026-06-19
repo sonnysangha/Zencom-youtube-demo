@@ -128,3 +128,142 @@
     @apply font-sans;
   }
 }
+
+/* ===== PHASE 6: marketing site styles ===== */
+/* Scoped, additive marketing brand accent + entrance animations. Nothing here
+   touches the shared design tokens above; everything is namespaced under
+   utility classes used only by the public marketing pages. */
+@theme inline {
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+}
+
+:root {
+  --brand: oklch(0.55 0.22 264);
+  --brand-foreground: oklch(0.985 0 0);
+}
+
+.dark {
+  --brand: oklch(0.68 0.18 264);
+  --brand-foreground: oklch(0.145 0 0);
+}
+
+@keyframes mk-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes mk-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes mk-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes mk-aurora {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(3%, -4%, 0) scale(1.08);
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes mk-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes mk-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* Entrance: reveal on load. Supports a staggered delay via inline style var. */
+.mk-reveal {
+  opacity: 0;
+  animation: mk-fade-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation-delay: var(--mk-delay, 0ms);
+}
+
+.mk-reveal-fade {
+  opacity: 0;
+  animation: mk-fade-in 0.9s ease forwards;
+  animation-delay: var(--mk-delay, 0ms);
+}
+
+.mk-float {
+  animation: mk-float 6s ease-in-out infinite;
+}
+
+.mk-aurora {
+  animation: mk-aurora 18s ease-in-out infinite;
+}
+
+.mk-marquee {
+  animation: mk-marquee 32s linear infinite;
+}
+
+.mk-gradient-text {
+  background: linear-gradient(
+    100deg,
+    var(--foreground) 0%,
+    var(--brand) 55%,
+    var(--foreground) 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: mk-shimmer 6s linear infinite;
+}
+
+.mk-grid-bg {
+  background-image:
+    linear-gradient(to right, var(--border) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--border) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, black 40%, transparent 80%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mk-reveal,
+  .mk-reveal-fade,
+  .mk-float,
+  .mk-aurora,
+  .mk-marquee,
+  .mk-gradient-text {
+    animation: none;
+    opacity: 1;
+  }
+}
+/* ===== END PHASE 6 ===== */

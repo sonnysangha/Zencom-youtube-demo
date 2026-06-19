@@ -4,7 +4,14 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 // Later phases extend this list (e.g. the marketing site, /widget, /help,
 // public embed APIs). The Clerk -> Convex webhook is served from the Convex
 // `.site` domain, so it does not pass through this Next.js proxy.
-const isPublicRoute = createRouteMatcher(["/", "/sign-in(.*)", "/sign-up(.*)"]);
+const isPublicRoute = createRouteMatcher([
+  "/",
+  "/sign-in(.*)",
+  "/sign-up(.*)",
+  // Phase 6: public marketing pages.
+  "/pricing(.*)",
+  "/install(.*)",
+]);
 
 export default clerkMiddleware(async (auth, request) => {
   if (!isPublicRoute(request)) {
