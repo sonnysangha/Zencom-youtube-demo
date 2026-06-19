@@ -48,3 +48,27 @@ export const kbAgent = new Agent(components.agent, {
     "knowledge base and suggest contacting support. Be concise and cite the " +
     "source titles you used inline like [Source: <title>].",
 });
+
+// ===== PHASE 7: Widget AI integration =====
+/**
+ * Agent powering the embedded support widget. Same OpenAI provider + RAG
+ * grounding as the Ask-KB agent, but with visitor-facing instructions (warm
+ * tone, no internal jargon). Per-conversation threads are owned by
+ * `userId = orgId` (server-derived from the workspace publicKey) so streaming
+ * and history stay tenant-isolated. RAG context is injected per call from the
+ * workspace's namespace (see convex/widgetAi.ts); we do not rely on the Agent's
+ * own message vector search for grounding.
+ */
+export const widgetAgent = new Agent(components.agent, {
+  name: "Support widget assistant",
+  languageModel: CHAT_MODEL,
+  textEmbeddingModel: EMBEDDING_MODEL,
+  instructions:
+    "You are a friendly customer-support assistant chatting with a website " +
+    "visitor. Answer using ONLY the provided knowledge base context. Keep " +
+    "answers short, warm, and conversational. If the context does not contain " +
+    "the answer, say you're not sure and offer to connect them with the support " +
+    "team. Never invent details. When you use a source, cite it inline like " +
+    "[Source: <title>].",
+});
+// ===== END PHASE 7 =====

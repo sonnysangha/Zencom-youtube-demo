@@ -143,6 +143,11 @@ export const getConversation = orgQuery({
     v.object({
       conversation: conversationValidator,
       visitor: v.union(v.null(), visitorSessionValidator),
+      // ===== PHASE 7: AI gate state for this conversation. =====
+      // true = AI answers visitor messages; false = human takeover (AI off).
+      // Default true when no AI thread row exists yet.
+      aiEnabled: v.boolean(),
+      // ===== END PHASE 7 =====
     }),
   ),
   handler: async (ctx, args) => {
@@ -151,7 +156,16 @@ export const getConversation = orgQuery({
       return null;
     }
     const visitor = await ctx.db.get(conversation.visitorId);
-    return { conversation, visitor };
+    // ===== PHASE 7: read the AI gate from conversationThreads. =====
+    const threadRow = await ctx.db
+      .query("conversationThreads")
+      .withIndex("by_conversation", (q) =>
+        q.eq("conversationId", args.conversationId),
+      )
+      .unique();
+    const aiEnabled = threadRow === null ? true : threadRow.aiEnabled;
+    // ===== END PHASE 7 =====
+    return { conversation, visitor, aiEnabled };
   },
 });
 
@@ -311,7 +325,8 @@ export const assign = orgMutation({
 
 /**
  * Human takeover: assign the conversation to the calling agent and ensure it's
- * open. (In Phase 7 this is what disables AI for the thread.)
+ * open. PHASE 7 — this also disables AI for the conversation so the assistant
+ * stops answering once a human steps in. Re-enable via `setAiEnabled`.
  */
 export const takeover = orgMutation({
   args: { conversationId: v.id("conversations") },
@@ -325,9 +340,62 @@ export const takeover = orgMutation({
       assigneeId: ctx.userId,
       status: "open",
     });
+    // ===== PHASE 7: taking over disables AI for this conversation. =====
+    await setAiGate(ctx, ctx.orgId, args.conversationId, false);
+    // ===== END PHASE 7 =====
     return null;
   },
 });
+
+// ===== PHASE 7: explicit AI on/off toggle for a conversation. =====
+/**
+ * Enable or disable the AI assistant for a conversation. Disabling is the same
+ * gate `takeover` flips; re-enabling hands the conversation back to the AI so
+ * the next visitor message is answered automatically again.
+ */
+export const setAiEnabled = orgMutation({
+  args: { conversationId: v.id("conversations"), enabled: v.boolean() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const conversation = await ctx.db.get(args.conversationId);
+    if (conversation === null || conversation.orgId !== ctx.orgId) {
+      throw new Error("Conversation not found");
+    }
+    await setAiGate(ctx, ctx.orgId, args.conversationId, args.enabled);
+    return null;
+  },
+});
+
+/**
+ * Upsert the AI gate on the conversationThreads row. The row may not exist yet
+ * (AI hasn't answered in this conversation), so we create it with an empty
+ * threadId placeholder — the AI action fills in the real threadId on first run
+ * (ensureThreadRow only overwrites the threadId, never the aiEnabled flag).
+ */
+async function setAiGate(
+  ctx: MutationCtx,
+  orgId: string,
+  conversationId: Id<"conversations">,
+  enabled: boolean,
+): Promise<void> {
+  const existing = await ctx.db
+    .query("conversationThreads")
+    .withIndex("by_conversation", (q) =>
+      q.eq("conversationId", conversationId),
+    )
+    .unique();
+  if (existing === null) {
+    await ctx.db.insert("conversationThreads", {
+      orgId,
+      conversationId,
+      threadId: "",
+      aiEnabled: enabled,
+    });
+  } else {
+    await ctx.db.patch(existing._id, { aiEnabled: enabled });
+  }
+}
+// ===== END PHASE 7 =====
 
 /** Open or close a conversation. */
 export const setStatus = orgMutation({

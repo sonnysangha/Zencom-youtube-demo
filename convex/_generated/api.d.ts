@@ -27,6 +27,7 @@ import type * as lib_widgetConfig from "../lib/widgetConfig.js";
 import type * as members from "../members.js";
 import type * as pdf from "../pdf.js";
 import type * as widget from "../widget.js";
+import type * as widgetAi from "../widgetAi.js";
 import type * as widgetConfig from "../widgetConfig.js";
 import type * as workspaces from "../workspaces.js";
 
@@ -56,6 +57,7 @@ declare const fullApi: ApiFromModules<{
   members: typeof members;
   pdf: typeof pdf;
   widget: typeof widget;
+  widgetAi: typeof widgetAi;
   widgetConfig: typeof widgetConfig;
   workspaces: typeof workspaces;
 }>;
