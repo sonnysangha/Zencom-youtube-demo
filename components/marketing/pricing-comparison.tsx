@@ -14,12 +14,23 @@ interface Group {
   rows: Row[];
 }
 
+// Rows reflect the real Clerk Billing plan feature sets (see lib/entitlements.ts):
+//   free_org   → shared_inbox, knowledge_base
+//   pro        → + ai_agent, lead_capture, widget_customization, analytics
+//   enterprise → + sso, audit_logs, priority_support
+// "Pricing" prices are per seat / month and match Clerk: $0 / $40 / $120.
 const GROUPS: Group[] = [
+  {
+    category: "Pricing",
+    rows: [
+      { label: "Price (per seat / month)", free: "$0", pro: "$40", enterprise: "$120" },
+      { label: "Seats", free: "Up to 3", pro: "Unlimited", enterprise: "Unlimited" },
+    ],
+  },
   {
     category: "Shared inbox",
     rows: [
-      { label: "Seats", free: "Up to 3", pro: "Unlimited", enterprise: "Unlimited" },
-      { label: "Real-time collaboration", free: true, pro: true, enterprise: true },
+      { label: "Real-time shared inbox", free: true, pro: true, enterprise: true },
       { label: "Assignment & statuses", free: true, pro: true, enterprise: true },
       { label: "Human takeover", free: true, pro: true, enterprise: true },
     ],
@@ -27,11 +38,10 @@ const GROUPS: Group[] = [
   {
     category: "Knowledge base & AI",
     rows: [
-      { label: "Knowledge bases", free: "1", pro: "Unlimited", enterprise: "Unlimited" },
-      { label: "Public help center", free: false, pro: true, enterprise: true },
-      { label: "AI answers with citations", free: false, pro: true, enterprise: true },
+      { label: "Knowledge base", free: "1", pro: "Unlimited", enterprise: "Unlimited" },
+      { label: "Public help center", free: true, pro: true, enterprise: true },
+      { label: "AI agent replies with citations", free: false, pro: true, enterprise: true },
       { label: "Doc import (MD / TXT / PDF)", free: false, pro: true, enterprise: true },
-      { label: "Monthly AI message quota", free: "—", pro: "Generous", enterprise: "Custom" },
     ],
   },
   {
@@ -39,17 +49,18 @@ const GROUPS: Group[] = [
     rows: [
       { label: "Website chat widget", free: true, pro: true, enterprise: true },
       { label: "Lead capture form", free: false, pro: true, enterprise: true },
-      { label: "CSV export", free: false, pro: true, enterprise: true },
-      { label: "Widget customizer", free: "Basic", pro: "Full", enterprise: "Full" },
+      { label: "Lead CSV export", free: false, pro: true, enterprise: true },
+      { label: "Widget customization", free: false, pro: true, enterprise: true },
+      { label: "Analytics & reporting", free: false, pro: true, enterprise: true },
     ],
   },
   {
     category: "Security & support",
     rows: [
-      { label: "Roles & permissions", free: false, pro: true, enterprise: true },
       { label: "SSO / SAML", free: false, pro: false, enterprise: true },
-      { label: "SLA & uptime guarantee", free: false, pro: false, enterprise: true },
-      { label: "Support", free: "Community", pro: "Priority", enterprise: "Dedicated CSM" },
+      { label: "Audit logs", free: false, pro: false, enterprise: true },
+      { label: "Priority support", free: false, pro: false, enterprise: true },
+      { label: "Support", free: "Community", pro: "Standard", enterprise: "Priority" },
     ],
   },
 ];

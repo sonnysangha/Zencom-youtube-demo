@@ -4,7 +4,6 @@ import {
   ArrowRight,
   Code2,
   KeyRound,
-  MousePointerClick,
   Palette,
   Rocket,
   ShieldCheck,
@@ -23,22 +22,19 @@ export const metadata: Metadata = {
     "Add the Zencom chat widget to any website with a single copy-paste script tag. Works with any framework or plain HTML.",
 };
 
+// This snippet matches the embed contract exactly (public/embed.js):
+//   - the loader reads the public key from the `data-zencom-key` attribute,
+//   - it derives the widget origin from its own script `src`, so the host in
+//     `src` must be the domain that serves /embed.js for your workspace.
+// The dashboard widget customizer generates this same snippet pre-filled with
+// your real origin and key — see InstallSnippet in components/widget-customizer.
+// `YOUR_ZENCOM_HOST` and `pk_xxxxxxxx` are clearly-marked placeholders.
 const EMBED_SNIPPET = `<!-- Zencom widget -->
-<script>
-  window.zencomSettings = { publicKey: "YOUR_PUBLIC_KEY" };
-</script>
 <script
-  src="https://app.zencom.io/embed.js"
-  data-zencom-key="YOUR_PUBLIC_KEY"
   async
+  src="https://YOUR_ZENCOM_HOST/embed.js"
+  data-zencom-key="pk_xxxxxxxx"
 ></script>`;
-
-const NPM_SNIPPET = `import { Zencom } from "@zencom/widget";
-
-Zencom.init({
-  publicKey: "YOUR_PUBLIC_KEY",
-  position: "bottom-right",
-});`;
 
 const STEPS = [
   {
@@ -67,7 +63,12 @@ const FAQ_ITEMS: FaqItem[] = [
   {
     question: "Which platforms does the widget support?",
     answer:
-      "Any website where you can add a script tag — plain HTML, WordPress, Shopify, Webflow, Next.js, React, Vue, and more. For SPA frameworks you can also use the npm package for tighter control.",
+      "Any website where you can add a script tag — plain HTML, WordPress, Shopify, Webflow, Next.js, React, Vue, and more. The loader injects a floating launcher and a hidden iframe, so there's nothing to build or bundle.",
+  },
+  {
+    question: "Where do I find my public key?",
+    answer:
+      "Open your dashboard, go to the widget page, and the install snippet there is pre-filled with your workspace's real public key (it starts with pk_) and your widget's origin. Copy that snippet — it's the same one shown here, ready to paste.",
   },
   {
     question: "Is the public key safe to expose?",
@@ -131,9 +132,14 @@ export default function InstallPage() {
               <p className="mt-3 text-center text-xs text-muted-foreground">
                 Replace{" "}
                 <code className="rounded bg-muted px-1 py-0.5 font-mono">
-                  YOUR_PUBLIC_KEY
+                  pk_xxxxxxxx
                 </code>{" "}
-                with the key from your dashboard.
+                with your workspace public key and{" "}
+                <code className="rounded bg-muted px-1 py-0.5 font-mono">
+                  YOUR_ZENCOM_HOST
+                </code>{" "}
+                with your Zencom domain — your dashboard widget page shows the
+                exact snippet, pre-filled.
               </p>
             </Reveal>
           </div>
@@ -170,22 +176,38 @@ export default function InstallPage() {
           </div>
         </section>
 
-        {/* npm alternative */}
+        {/* where the snippet comes from */}
         <section className="mx-auto w-full max-w-6xl px-6 py-16">
           <div className="grid items-center gap-12 lg:grid-cols-2">
             <Reveal>
               <span className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-muted/40 px-3 py-1 text-xs font-medium text-muted-foreground">
-                <MousePointerClick className="size-3.5" /> For SPA frameworks
+                <KeyRound className="size-3.5" /> Your exact snippet
               </span>
               <h2 className="mt-4 text-balance text-3xl font-semibold tracking-tight">
-                Prefer npm? Use the package
+                Copy the snippet straight from your dashboard
               </h2>
               <p className="mt-4 max-w-lg text-pretty text-muted-foreground">
-                If you build with React, Vue, or another SPA framework, install
-                the package and initialize the widget in code for tighter control
-                over lifecycle and routing.
+                You don&apos;t have to fill anything in by hand. In the dashboard,
+                open the widget page — the install tab shows this same{" "}
+                <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                  &lt;script&gt;
+                </code>{" "}
+                tag, already pre-filled with your workspace&apos;s public key and
+                the right origin. Copy, paste before{" "}
+                <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                  &lt;/body&gt;
+                </code>
+                , and you&apos;re live.
               </p>
               <ul className="mt-6 flex flex-col gap-3 text-sm text-muted-foreground">
+                <li className="flex items-center gap-2.5">
+                  <ShieldCheck className="size-4 text-brand" />
+                  The loader reads your key from the{" "}
+                  <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                    data-zencom-key
+                  </code>{" "}
+                  attribute
+                </li>
                 <li className="flex items-center gap-2.5">
                   <ShieldCheck className="size-4 text-brand" />
                   Per-visitor session tokens, validated server-side
@@ -194,14 +216,18 @@ export default function InstallPage() {
                   <ShieldCheck className="size-4 text-brand" />
                   Loaded asynchronously — never blocks your render
                 </li>
-                <li className="flex items-center gap-2.5">
-                  <ShieldCheck className="size-4 text-brand" />
-                  Fully typed init options
-                </li>
               </ul>
+              <div className="mt-8">
+                <Button asChild size="lg" className="group">
+                  <Link href="/dashboard/widget">
+                    Open the widget page
+                    <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+                  </Link>
+                </Button>
+              </div>
             </Reveal>
             <Reveal delay={120}>
-              <CodeBlock label="widget.ts" code={NPM_SNIPPET} />
+              <CodeBlock label="dashboard → widget → install" code={EMBED_SNIPPET} />
             </Reveal>
           </div>
         </section>
