@@ -1,108 +1,132 @@
-import Link from "next/link";
+import type { Metadata } from "next";
 import { PricingTable } from "@clerk/nextjs";
-import { ArrowLeft, Check } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { MarketingHeader } from "@/components/marketing/marketing-header";
+import { MarketingFooter } from "@/components/marketing/marketing-footer";
+import { PricingComparison } from "@/components/marketing/pricing-comparison";
+import { Faq, type FaqItem } from "@/components/marketing/faq";
+import { Reveal } from "@/components/marketing/reveal";
 
 /**
- * PHASE 5 — Public pricing page.
+ * Public pricing page.
  *
- * Renders Clerk's `<PricingTable for="organization" />`, which shows the three
+ * Combines Phase 6's marketing layout (header, hero, comparison table, FAQ,
+ * footer) with Phase 5's live Clerk billing table. The "plan cards" section
+ * renders `<PricingTable for="organization" />`, which surfaces the three
  * Organization Plans configured in Clerk Billing (Free / Pro / Enterprise) and
- * opens Clerk's in-app checkout drawer on selection. Plans are org-scoped, so
- * `for="organization"` is required — without it the table renders the (empty)
- * user-plan catalog.
+ * opens Clerk's in-app checkout drawer on selection. `for="organization"` is
+ * required because the plans are org-scoped.
  *
- * Public route: added to the proxy matcher so it renders without auth. When a
- * signed-out visitor picks a paid plan, Clerk routes them through sign-in /
+ * Public route: added to the proxy matcher so it renders without auth. A
+ * signed-out visitor picking a paid plan is routed through sign-in /
  * org-selection before checkout.
  */
-export const metadata = {
+export const metadata: Metadata = {
   title: "Pricing — Zencom",
   description:
-    "Seat-based plans for support teams of every size. Free, Pro, and Enterprise.",
+    "Simple, seat-based pricing for the Zencom support platform. Free, Pro, and Enterprise plans with AI answers, a shared inbox, and a knowledge base.",
 };
 
-const COMPARISON: { tier: string; blurb: string; features: string[] }[] = [
+const FAQ_ITEMS: FaqItem[] = [
   {
-    tier: "Free",
-    blurb: "The essentials for a small team getting started.",
-    features: ["Shared inbox", "Knowledge base"],
+    question: "How does seat-based pricing work?",
+    answer:
+      "You pay per active seat in your workspace, each month. Add or remove teammates anytime — billing updates automatically and is prorated. The Free plan includes up to 3 seats at no cost.",
   },
   {
-    tier: "Pro",
-    blurb: "AI-powered support and lead capture for growing teams.",
-    features: [
-      "Everything in Free",
-      "AI agent replies",
-      "Lead capture",
-      "Widget customization",
-      "Analytics & reporting",
-    ],
+    question: "Can I try Pro before paying?",
+    answer:
+      "Yes. Every workspace can start a Pro trial with full access to AI answers, unlimited knowledge bases, and lead capture. No credit card is required to begin, and you can downgrade to Free at any time.",
   },
   {
-    tier: "Enterprise",
-    blurb: "Advanced security and controls for large organizations.",
-    features: [
-      "Everything in Pro",
-      "Priority support",
-      "SSO / SAML",
-      "Audit logs",
-    ],
+    question: "What counts as an AI message?",
+    answer:
+      "An AI message is a single AI-generated reply to a customer, grounded in your knowledge base with cited sources. Pro includes a generous monthly quota; Enterprise customers get custom quotas tuned to their volume.",
+  },
+  {
+    question: "Do you support multiple brands or teams?",
+    answer:
+      "Absolutely. Zencom is multi-tenant by design — each organization gets an isolated, secure workspace with its own team, data, branding, and billing. Enterprise customers can run many workspaces under one agreement.",
+  },
+  {
+    question: "Is SSO available?",
+    answer:
+      "SSO and SAML are included on the Enterprise plan, alongside advanced analytics, custom AI quotas, an SLA, and a dedicated success manager.",
+  },
+  {
+    question: "Can I change or cancel my plan later?",
+    answer:
+      "Yes — upgrade, downgrade, or cancel at any time directly from your dashboard. Self-serve checkout and billing management are built in, so there's never a sales gate for standard plans.",
   },
 ];
 
 export default function PricingPage() {
   return (
-    <main className="mx-auto flex max-w-6xl flex-col gap-12 px-6 py-16">
-      <div className="flex flex-col gap-4 text-center">
-        <div className="flex justify-center">
-          <Button asChild variant="ghost" size="sm" className="gap-1.5">
-            <Link href="/">
-              <ArrowLeft className="size-4" />
-              Back to home
-            </Link>
-          </Button>
-        </div>
-        <Badge variant="secondary" className="mx-auto w-fit">
-          Seat-based organization plans
-        </Badge>
-        <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">
-          Pricing that scales with your team
-        </h1>
-        <p className="mx-auto max-w-2xl text-base text-muted-foreground">
-          Every plan is billed to your organization. Upgrade, downgrade, or
-          cancel anytime from your billing dashboard.
-        </p>
-      </div>
-
-      {/* Clerk's live, checkout-enabled org pricing table. */}
-      <PricingTable for="organization" />
-
-      {/* Static comparison fallback so the page is meaningful even before the
-          Clerk table hydrates. */}
-      <section className="grid gap-6 sm:grid-cols-3">
-        {COMPARISON.map((plan) => (
+    <div className="flex min-h-screen flex-1 flex-col">
+      <MarketingHeader />
+      <main className="flex-1">
+        {/* hero */}
+        <section className="relative overflow-hidden">
           <div
-            key={plan.tier}
-            className="flex flex-col gap-4 rounded-xl border border-border bg-card p-6 shadow-sm"
+            aria-hidden
+            className="pointer-events-none absolute inset-0 -z-10"
           >
-            <div>
-              <h2 className="text-lg font-semibold">{plan.tier}</h2>
-              <p className="mt-1 text-sm text-muted-foreground">{plan.blurb}</p>
-            </div>
-            <ul className="flex flex-col gap-2 text-sm">
-              {plan.features.map((feature) => (
-                <li key={feature} className="flex items-center gap-2">
-                  <Check className="size-4 shrink-0 text-primary" />
-                  <span>{feature}</span>
-                </li>
-              ))}
-            </ul>
+            <div className="absolute inset-0 mk-grid-bg opacity-30" />
+            <div className="mk-aurora absolute -top-32 left-1/2 size-[34rem] -translate-x-1/2 rounded-full bg-brand/15 blur-[120px]" />
           </div>
-        ))}
-      </section>
-    </main>
+          <div className="mx-auto w-full max-w-6xl px-6 pb-4 pt-20 text-center sm:pt-28">
+            <Reveal>
+              <span className="inline-flex items-center rounded-full border border-border/70 bg-background/70 px-3 py-1 text-xs font-medium text-brand backdrop-blur">
+                Pricing
+              </span>
+              <h1 className="mx-auto mt-5 max-w-2xl text-balance text-4xl font-semibold tracking-tight sm:text-5xl">
+                Simple pricing that scales with your team
+              </h1>
+              <p className="mx-auto mt-5 max-w-xl text-pretty text-muted-foreground">
+                Start free, upgrade when you&apos;re ready. Every plan includes
+                the real-time shared inbox and website widget — pay only for the
+                seats you use.
+              </p>
+            </Reveal>
+          </div>
+        </section>
+
+        {/* plan cards — Clerk's live, checkout-enabled org pricing table */}
+        <section className="mx-auto w-full max-w-6xl px-6 py-12">
+          <PricingTable for="organization" />
+        </section>
+
+        {/* comparison table */}
+        <section className="mx-auto w-full max-w-5xl px-6 py-16">
+          <Reveal className="mb-10 text-center">
+            <h2 className="text-balance text-3xl font-semibold tracking-tight">
+              Compare every feature
+            </h2>
+            <p className="mt-3 text-muted-foreground">
+              A detailed look at what&apos;s included in each plan.
+            </p>
+          </Reveal>
+          <Reveal>
+            <PricingComparison />
+          </Reveal>
+        </section>
+
+        {/* FAQ */}
+        <section className="mx-auto w-full max-w-5xl px-6 py-16">
+          <Reveal className="mb-10 text-center">
+            <h2 className="text-balance text-3xl font-semibold tracking-tight">
+              Frequently asked questions
+            </h2>
+            <p className="mt-3 text-muted-foreground">
+              Everything else you might be wondering about.
+            </p>
+          </Reveal>
+          <Reveal>
+            <Faq items={FAQ_ITEMS} />
+          </Reveal>
+        </section>
+      </main>
+      <MarketingFooter />
+    </div>
   );
 }

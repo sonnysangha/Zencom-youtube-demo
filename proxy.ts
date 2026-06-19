@@ -13,8 +13,10 @@ const isPublicRoute = createRouteMatcher([
   "/embed.js",
   // Phase 3: public help center (reader + search), tenant-scoped by publicKey.
   "/help(.*)",
-  // Phase 5: public pricing page.
+  // Phase 5/6: public pricing page.
   "/pricing(.*)",
+  // Phase 6: public install/embed instructions page.
+  "/install(.*)",
 ]);
 
 export default clerkMiddleware(async (auth, request) => {
