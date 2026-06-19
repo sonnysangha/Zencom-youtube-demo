@@ -1,10 +1,11 @@
-import { v } from "convex/values";
+import { v, ConvexError } from "convex/values";
 import { action } from "./_generated/server";
 import type { ActionCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { getOrgContext } from "./lib/auth";
 import { rag } from "./lib/ai";
+import { checkKbDocumentQuota } from "./lib/quota";
 
 /**
  * Phase 3 — Document ingestion pipeline.
@@ -41,6 +42,31 @@ async function requireAdminOrg(ctx: ActionCtx): Promise<{
   return { orgId, userId };
 }
 
+/**
+ * Enforce the plan-derived knowledge-base document quota before ingesting a new
+ * document. On exhaustion, throw a `ConvexError` carrying a structured payload
+ * (`code: "quota_reached"`, the plan, the cap) so the UI can render an upgrade
+ * prompt — this is application data surfaced cleanly to the client, NOT an
+ * unhandled server error. Enterprise (unlimited) passes without a count.
+ */
+async function enforceKbDocumentQuota(
+  ctx: ActionCtx,
+  orgId: string,
+): Promise<void> {
+  const quota = await checkKbDocumentQuota(ctx, orgId);
+  if (!quota.ok) {
+    throw new ConvexError({
+      code: "quota_reached",
+      metric: "kb_documents",
+      plan: quota.plan,
+      limit: quota.limit,
+      message:
+        `Your plan's knowledge-base document limit (${quota.limit}) has been ` +
+        `reached. Delete a document or upgrade your plan to add more.`,
+    });
+  }
+}
+
 const fileTypeValidator = v.union(
   v.literal("md"),
   v.literal("txt"),
@@ -66,6 +92,10 @@ export const processUpload = action({
     args,
   ): Promise<{ documentId: Id<"documents">; chunkCount: number }> => {
     const { orgId, userId } = await requireAdminOrg(ctx);
+
+    // Plan-derived KB-document quota: refuse before doing any storage read /
+    // embedding work when the org is at its cap.
+    await enforceKbDocumentQuota(ctx, orgId);
 
     const documentId = await ctx.runMutation(
       internal.knowledge.insertDocument,
@@ -161,6 +191,9 @@ export const processText = action({
     if (trimmed.length === 0) {
       throw new Error("Cannot ingest empty text");
     }
+
+    // Plan-derived KB-document quota: refuse before embedding work.
+    await enforceKbDocumentQuota(ctx, orgId);
 
     const documentId = await ctx.runMutation(
       internal.knowledge.insertDocument,

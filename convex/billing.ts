@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { internalMutation } from "./_generated/server";
+import { internalMutation, internalQuery } from "./_generated/server";
 import { orgMutation, orgQuery } from "./lib/customFunctions";
 
 /**
@@ -220,5 +220,123 @@ export const incrementUsage = orgMutation({
     const next = existing.count + amount;
     await ctx.db.patch(existing._id, { count: next, updatedAt: Date.now() });
     return next;
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Internal helpers for server-side quota enforcement (convex/lib/quota.ts).
+//
+// Actions (widgetAi, askKb, ingest) cannot touch ctx.db, so they read the
+// subscription mirror / usage meters and bump counters through these internal
+// functions via ctx.runQuery / ctx.runMutation. The orgId is always passed in
+// already server-derived (from the Clerk JWT or a workspace publicKey), never
+// trusted from a client.
+// ---------------------------------------------------------------------------
+
+/**
+ * The active plan slug for an org from the Convex subscription mirror, or null
+ * when no subscription has synced yet (callers treat null as the Free plan).
+ *
+ * A subscription is only treated as conferring its paid plan while its status
+ * is healthy ("active" / "trialing"). Lapsed states (past_due, canceled,
+ * ended, etc.) fall back to Free so quota enforcement tightens automatically
+ * when billing lapses — matching the Clerk `has({ plan })` source of truth.
+ */
+export const planForOrg = internalQuery({
+  args: { orgId: v.string() },
+  returns: v.union(v.null(), v.string()),
+  handler: async (ctx, args) => {
+    const sub = await ctx.db
+      .query("subscriptions")
+      .withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+      .unique();
+    if (sub === null) {
+      return null;
+    }
+    const healthy = sub.status === "active" || sub.status === "trialing";
+    return healthy ? sub.plan : null;
+  },
+});
+
+/**
+ * Read a usage meter count for an org/metric/period (0 when absent). Mirrors
+ * `usageForMetric` but as an internal query callable from actions with a
+ * server-derived orgId.
+ */
+export const usageForOrgMetricPeriod = internalQuery({
+  args: { orgId: v.string(), metric: v.string(), period: v.string() },
+  returns: v.number(),
+  handler: async (ctx, args) => {
+    const row = await ctx.db
+      .query("usageMeters")
+      .withIndex("by_org_and_metric_and_period", (q) =>
+        q
+          .eq("orgId", args.orgId)
+          .eq("metric", args.metric)
+          .eq("period", args.period),
+      )
+      .unique();
+    return row?.count ?? 0;
+  },
+});
+
+/**
+ * Increment a usage meter for a server-derived org by `amount` (default 1) and
+ * return the new total. Creates the (org, metric, period) row on first use.
+ * Internal sibling of `incrementUsage` (the orgMutation) for action call sites.
+ */
+export const incrementUsageInternal = internalMutation({
+  args: {
+    orgId: v.string(),
+    metric: v.string(),
+    period: v.string(),
+    amount: v.optional(v.number()),
+  },
+  returns: v.number(),
+  handler: async (ctx, args) => {
+    const amount = args.amount ?? 1;
+    const existing = await ctx.db
+      .query("usageMeters")
+      .withIndex("by_org_and_metric_and_period", (q) =>
+        q
+          .eq("orgId", args.orgId)
+          .eq("metric", args.metric)
+          .eq("period", args.period),
+      )
+      .unique();
+
+    if (existing === null) {
+      await ctx.db.insert("usageMeters", {
+        orgId: args.orgId,
+        metric: args.metric,
+        period: args.period,
+        count: amount,
+        updatedAt: Date.now(),
+      });
+      return amount;
+    }
+
+    const next = existing.count + amount;
+    await ctx.db.patch(existing._id, { count: next, updatedAt: Date.now() });
+    return next;
+  },
+});
+
+/**
+ * Count non-errored `documents` rows for an org, bounded by `limit` (we read at
+ * most `limit + 1` rows so the caller can detect "at or over the cap" without
+ * an unbounded scan). Used to enforce the per-plan KB-documents quota before
+ * ingesting a new document. Documents in the "error" state never embedded, so
+ * they don't count against the quota.
+ */
+export const countDocumentsForOrg = internalQuery({
+  args: { orgId: v.string(), limit: v.number() },
+  returns: v.number(),
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query("documents")
+      .withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+      .take(args.limit + 1);
+    return rows.filter((r) => r.status !== "error").length;
   },
 });

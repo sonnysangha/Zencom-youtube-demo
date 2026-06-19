@@ -1,5 +1,5 @@
 import { RateLimiter, MINUTE, HOUR } from "@convex-dev/rate-limiter";
-import { components } from "../_generated/api";
+import { components, internal } from "../_generated/api";
 import type { ActionCtx, MutationCtx } from "../_generated/server";
 
 /**
@@ -82,4 +82,187 @@ export async function enforceRateLimit(
     throws: opts?.throws ?? false,
   });
   return { ok, retryAfter: retryAfter ?? undefined };
+}
+
+// ===========================================================================
+// PLAN-DERIVED MONTHLY QUOTAS (follow-up: wire real plan limits at all sites)
+//
+// The rate limiter above bounds *bursts* (abuse). This second layer enforces
+// *plan entitlement* caps that span a billing month (AI messages, KB docs).
+//
+// Plan/feature entitlement's source of truth is Clerk. The Next-side mapping
+// lives in ../../lib/entitlements.ts, but that module is `server-only` (it
+// calls Clerk's `auth()`/`has()`), so it CANNOT be imported into Convex. This
+// block MIRRORS those same plan tiers/slugs against the Convex billing mirror
+// (convex/billing.ts → `subscriptions`) so backend functions can derive the
+// plan and enforce caps without round-tripping to Clerk.
+//
+// Keep the slugs/tiers here in sync with ../../lib/entitlements.ts (PLANS).
+// ===========================================================================
+
+/**
+ * Plan slugs — must match Clerk Billing plan slugs and ../../lib/entitlements.ts
+ * `PLANS`. Duplicated here (not imported) because entitlements.ts is
+ * `server-only` and not importable into the Convex runtime.
+ */
+export const QUOTA_PLANS = {
+  free: "free_org",
+  pro: "pro",
+  enterprise: "enterprise",
+} as const;
+
+export type QuotaPlanSlug = (typeof QUOTA_PLANS)[keyof typeof QUOTA_PLANS];
+
+/** Usage-meter metric keys. Shared across every metering/quota call site so the
+ *  same (org, metric, period) rows are read and written everywhere. */
+export const QUOTA_METRICS = {
+  /** AI answers generated (widget AI + dashboard Ask KB). Monthly period. */
+  aiMessages: "ai_messages",
+  /** Knowledge-base source documents ingested. Lifetime ("all") period. */
+  kbDocuments: "kb_documents",
+} as const;
+
+/** Per-plan quota limits. `null` means "unlimited" (no cap enforced). */
+export interface PlanLimits {
+  /** AI answers per calendar month (widget AI + Ask KB combined). */
+  aiMessagesPerMonth: number | null;
+  /** Total knowledge-base source documents that may exist at once. */
+  kbDocuments: number | null;
+  /** Included member seats (informational; seat enforcement lives in Clerk). */
+  seats: number | null;
+}
+
+/**
+ * Plan → limits. Tiers mirror ../../lib/entitlements.ts. Tune alongside the
+ * Clerk Billing plan configuration as pricing is finalized.
+ */
+export const PLAN_LIMITS: Record<QuotaPlanSlug, PlanLimits> = {
+  [QUOTA_PLANS.free]: {
+    aiMessagesPerMonth: 100,
+    kbDocuments: 10,
+    seats: 2,
+  },
+  [QUOTA_PLANS.pro]: {
+    aiMessagesPerMonth: 5000,
+    kbDocuments: 200,
+    seats: 10,
+  },
+  [QUOTA_PLANS.enterprise]: {
+    aiMessagesPerMonth: null,
+    kbDocuments: null,
+    seats: null,
+  },
+};
+
+/** Limits for the baseline Free plan (used when no subscription has synced). */
+export const FREE_PLAN_LIMITS = PLAN_LIMITS[QUOTA_PLANS.free];
+
+/** Coerce an arbitrary plan slug from the billing mirror to a known tier. */
+function normalizePlan(plan: string | null): QuotaPlanSlug {
+  if (plan === QUOTA_PLANS.enterprise) return QUOTA_PLANS.enterprise;
+  if (plan === QUOTA_PLANS.pro) return QUOTA_PLANS.pro;
+  return QUOTA_PLANS.free;
+}
+
+/** Resolve the plan limits for a known/normalized plan slug. */
+export function limitsForPlan(plan: QuotaPlanSlug): PlanLimits {
+  return PLAN_LIMITS[plan];
+}
+
+/** Current monthly period bucket (e.g. "2026-06") in UTC for a timestamp. */
+export function monthlyPeriod(now: number): string {
+  const d = new Date(now);
+  const month = `${d.getUTCMonth() + 1}`.padStart(2, "0");
+  return `${d.getUTCFullYear()}-${month}`;
+}
+
+/**
+ * Derive an org's plan tier from the Convex billing mirror (convex/billing.ts),
+ * defaulting to Free when no (healthy) subscription has synced. Callable from
+ * any action or mutation (reads via an internal query, so no ctx.db needed).
+ */
+export async function getOrgPlan(
+  ctx: MutationCtx | ActionCtx,
+  orgId: string,
+): Promise<QuotaPlanSlug> {
+  const plan = await ctx.runQuery(internal.billing.planForOrg, { orgId });
+  return normalizePlan(plan);
+}
+
+/** Outcome of a quota check. `ok: false` carries the cap + current usage so the
+ *  caller can craft a graceful, plan-aware message. */
+export interface QuotaCheckResult {
+  ok: boolean;
+  plan: QuotaPlanSlug;
+  /** The enforced cap (null = unlimited; only present when `ok`). */
+  limit: number | null;
+  /** Usage observed for the period at check time. */
+  used: number;
+}
+
+/**
+ * Check the plan-derived monthly AI-message quota for an org WITHOUT consuming
+ * it. Returns `ok: false` when the org is at or over its cap. Unlimited plans
+ * (Enterprise) always pass. The increment itself happens separately when the
+ * answer is actually produced (see `recordAiMessageUsage` / the per-site meter
+ * writes) so a check that ultimately doesn't generate an answer never burns
+ * quota.
+ */
+export async function checkAiMessageQuota(
+  ctx: MutationCtx | ActionCtx,
+  orgId: string,
+  now: number,
+): Promise<QuotaCheckResult> {
+  const plan = await getOrgPlan(ctx, orgId);
+  const limit = limitsForPlan(plan).aiMessagesPerMonth;
+  if (limit === null) {
+    return { ok: true, plan, limit: null, used: 0 };
+  }
+  const period = monthlyPeriod(now);
+  const used = await ctx.runQuery(internal.billing.usageForOrgMetricPeriod, {
+    orgId,
+    metric: QUOTA_METRICS.aiMessages,
+    period,
+  });
+  return { ok: used < limit, plan, limit, used };
+}
+
+/**
+ * Increment the monthly AI-message meter for an org (default +1) and return the
+ * new total. Use this from action call sites that don't already meter inline.
+ */
+export async function recordAiMessageUsage(
+  ctx: MutationCtx | ActionCtx,
+  orgId: string,
+  now: number,
+  amount = 1,
+): Promise<number> {
+  return await ctx.runMutation(internal.billing.incrementUsageInternal, {
+    orgId,
+    metric: QUOTA_METRICS.aiMessages,
+    period: monthlyPeriod(now),
+    amount,
+  });
+}
+
+/**
+ * Check the plan-derived knowledge-base document quota for an org. The cap is a
+ * *total* (lifetime) count of non-errored documents, so it uses a bounded
+ * count query rather than a period meter. Unlimited plans (Enterprise) always
+ * pass without scanning.
+ */
+export async function checkKbDocumentQuota(
+  ctx: MutationCtx | ActionCtx,
+  orgId: string,
+): Promise<QuotaCheckResult> {
+  const plan = await getOrgPlan(ctx, orgId);
+  const limit = limitsForPlan(plan).kbDocuments;
+  if (limit === null) {
+    return { ok: true, plan, limit: null, used: 0 };
+  }
+  const used = await ctx.runQuery(internal.billing.countDocumentsForOrg, {
+    orgId,
+    limit,
+  });
+  return { ok: used < limit, plan, limit, used };
 }

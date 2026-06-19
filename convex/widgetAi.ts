@@ -9,7 +9,11 @@ import type { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { widgetAgent, rag } from "./lib/ai";
 import { sourceValidator } from "./lib/inbox";
-import { enforceRateLimit } from "./lib/quota";
+import {
+  enforceRateLimit,
+  checkAiMessageQuota,
+  QUOTA_METRICS,
+} from "./lib/quota";
 
 /**
  * PHASE 7 — Widget AI integration.
@@ -35,11 +39,11 @@ import { enforceRateLimit } from "./lib/quota";
  * through the internal query/mutation helpers below.
  */
 
-// Monthly AI-answer quota metric (Phase 5 usageMeters). Free plans get a small
-// allowance; the gate is graceful (post a fallback message, never error to the
-// visitor). Tune as billing tiers are finalized.
-const AI_MESSAGE_METRIC = "ai_messages";
-const AI_MESSAGE_MONTHLY_CAP = 1000;
+// Monthly AI-answer quota metric (Phase 5 usageMeters). The per-month CAP is
+// now PLAN-DERIVED (convex/lib/quota.ts → PLAN_LIMITS), mirroring the Clerk
+// billing tiers, instead of a hardcoded number. The gate stays graceful: on
+// exhaustion we post a fallback message and never error to the visitor.
+const AI_MESSAGE_METRIC = QUOTA_METRICS.aiMessages;
 
 const FALLBACK_MESSAGE =
   "Thanks for your message! Our AI assistant is taking a quick break right now, " +
@@ -81,7 +85,6 @@ export const generateAnswer = internalAction({
     // 2. Quota + rate limiting (Phase 5). On exhaustion, post a graceful
     //    fallback as an AI message instead of an answer — never error to the
     //    visitor, never call OpenAI.
-    const period = monthlyPeriod(Date.now());
     const rl = await enforceRateLimit(ctx, "aiMessage", args.orgId);
     if (!rl.ok) {
       await ctx.runMutation(internal.widgetAi.recordAiMessage, {
@@ -92,12 +95,11 @@ export const generateAnswer = internalAction({
       });
       return null;
     }
-    const used = await ctx.runQuery(internal.widgetAi.usageForPeriod, {
-      orgId: args.orgId,
-      metric: AI_MESSAGE_METRIC,
-      period,
-    });
-    if (used >= AI_MESSAGE_MONTHLY_CAP) {
+    // Plan-derived monthly AI-message cap (mirrors Clerk billing tiers). The
+    // meter itself is incremented in `recordAiMessage` when an answer is saved,
+    // so this is a non-consuming pre-check.
+    const quota = await checkAiMessageQuota(ctx, args.orgId, Date.now());
+    if (!quota.ok) {
       await ctx.runMutation(internal.widgetAi.recordAiMessage, {
         orgId: args.orgId,
         conversationId: args.conversationId,

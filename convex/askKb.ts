@@ -10,6 +10,11 @@ import { action, mutation, query } from "./_generated/server";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
 import { getOrgContext } from "./lib/auth";
 import { kbAgent, rag } from "./lib/ai";
+import {
+  enforceRateLimit,
+  checkAiMessageQuota,
+  recordAiMessageUsage,
+} from "./lib/quota";
 
 /**
  * Phase 3 — Standalone "Ask KB" surface.
@@ -70,6 +75,9 @@ export const ask = action({
   },
   returns: v.object({
     sources: v.array(sourceValidator),
+    // When true, the org hit its plan's monthly AI-message cap and no answer
+    // was generated. The UI renders an upgrade prompt instead of a reply.
+    quotaReached: v.optional(v.boolean()),
   }),
   handler: async (ctx, args) => {
     const { orgId } = await requireOrg(ctx);
@@ -77,6 +85,19 @@ export const ask = action({
     const question = args.prompt.trim();
     if (question.length === 0) {
       throw new Error("Question cannot be empty");
+    }
+
+    // Quota + rate limiting. An Ask-KB answer counts as one AI message, sharing
+    // the same plan-derived monthly cap + usageMeters keys as the widget AI.
+    // On exhaustion we return a graceful `quotaReached` result rather than
+    // throwing or calling OpenAI.
+    const rl = await enforceRateLimit(ctx, "aiMessage", orgId);
+    if (!rl.ok) {
+      return { sources: [], quotaReached: true };
+    }
+    const quota = await checkAiMessageQuota(ctx, orgId, Date.now());
+    if (!quota.ok) {
+      return { sources: [], quotaReached: true };
     }
 
     // 1. Retrieve relevant context from the workspace's RAG namespace.
@@ -134,6 +155,10 @@ export const ask = action({
     // Drain the stream so the action stays alive until generation completes and
     // all deltas are saved. The client reads the text via the streaming query.
     await result.consumeStream();
+
+    // Meter this answer as one AI message (same metric/period as the widget AI)
+    // so the monthly plan cap is shared across both surfaces.
+    await recordAiMessageUsage(ctx, orgId, Date.now());
 
     return { sources };
   },
