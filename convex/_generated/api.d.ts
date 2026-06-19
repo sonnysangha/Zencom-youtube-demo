@@ -8,13 +8,27 @@
  * @module
  */
 
+import type * as http from "../http.js";
+import type * as lib_auth from "../lib/auth.js";
+import type * as lib_customFunctions from "../lib/customFunctions.js";
+import type * as lib_roles from "../lib/roles.js";
+import type * as members from "../members.js";
+import type * as workspaces from "../workspaces.js";
+
 import type {
   ApiFromModules,
   FilterApi,
   FunctionReference,
 } from "convex/server";
 
-declare const fullApi: ApiFromModules<{}>;
+declare const fullApi: ApiFromModules<{
+  http: typeof http;
+  "lib/auth": typeof lib_auth;
+  "lib/customFunctions": typeof lib_customFunctions;
+  "lib/roles": typeof lib_roles;
+  members: typeof members;
+  workspaces: typeof workspaces;
+}>;
 
 /**
  * A utility for referencing Convex functions in your app's public API.
