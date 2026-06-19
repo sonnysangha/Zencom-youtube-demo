@@ -1,5 +1,6 @@
 import {
   BookOpen,
+  CreditCard,
   Inbox,
   LayoutDashboard,
   Sparkles,
@@ -41,8 +42,6 @@ export const navItems: NavItem[] = [
   // ===== END PHASE 2 =====
   // Wave A/B tracks append here, e.g.:
   // { title: "Leads", href: "/dashboard/leads", icon: Contact },
-  // { title: "Billing", href: "/dashboard/billing", icon: CreditCard, requiredRole: "org:admin" },
-
   // ===== PHASE 3: Knowledge base + RAG =====
   {
     title: "Knowledge base",
@@ -52,4 +51,13 @@ export const navItems: NavItem[] = [
   },
   { title: "Ask KB", href: "/dashboard/ask-kb", icon: Sparkles },
   // ===== END PHASE 3 =====
+
+  // ===== PHASE 5: Billing & plans =====
+  {
+    title: "Billing",
+    href: "/dashboard/billing",
+    icon: CreditCard,
+    requiredRole: "org:admin",
+  },
+  // ===== END PHASE 5 =====
 ];

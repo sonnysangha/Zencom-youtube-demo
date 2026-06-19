@@ -14,6 +14,7 @@
     "@convex-dev/agent": "^0.6.4",
     "@convex-dev/persistent-text-streaming": "^0.3.2",
     "@convex-dev/rag": "^0.7.5",
+    "@convex-dev/rate-limiter": "^0.3.2",
     "ai": "^6.0.208",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
