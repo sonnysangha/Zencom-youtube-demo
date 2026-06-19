@@ -1,4 +1,9 @@
-import { LayoutDashboard, Users, type LucideIcon } from "lucide-react";
+import {
+  CreditCard,
+  LayoutDashboard,
+  Users,
+  type LucideIcon,
+} from "lucide-react";
 
 export type OrgRole = "org:admin" | "org:member";
 
@@ -33,5 +38,12 @@ export const navItems: NavItem[] = [
   // { title: "Inbox", href: "/dashboard/inbox", icon: Inbox },
   // { title: "Knowledge base", href: "/dashboard/knowledge", icon: BookOpen, requiredRole: "org:admin" },
   // { title: "Leads", href: "/dashboard/leads", icon: Contact },
-  // { title: "Billing", href: "/dashboard/billing", icon: CreditCard, requiredRole: "org:admin" },
+  // ===== PHASE 5: Billing & plans =====
+  {
+    title: "Billing",
+    href: "/dashboard/billing",
+    icon: CreditCard,
+    requiredRole: "org:admin",
+  },
+  // ===== END PHASE 5 =====
 ];

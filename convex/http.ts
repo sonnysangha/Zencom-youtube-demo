@@ -97,6 +97,80 @@ const handleClerkWebhook = httpAction(async (ctx, request) => {
       break;
     }
 
+    // ===== PHASE 5: Billing & plans =====
+    // Clerk billing events. Plan/feature entitlement stays in Clerk; we mirror
+    // plan/status/seats into Convex (subscriptions table) so backend functions
+    // can gate without round-tripping. Event names are Clerk's camelCase form
+    // (NOT Stripe's). The subscribing entity is under `data.payer`; for B2B the
+    // org is `data.payer.organization_id`. Plan slug on subscription events is
+    // nested at `data.items[i].plan.slug`; on item events it's `data.plan.slug`.
+    case "subscription.created":
+    case "subscription.updated":
+    case "subscription.active":
+    case "subscription.pastDue": {
+      const data = evt.data;
+      const orgId = data.payer?.organization_id;
+      // Only mirror organization (B2B) subscriptions; ignore personal ones.
+      if (orgId) {
+        const activeItem =
+          data.items?.find((i) => Boolean(i.plan?.slug)) ?? data.items?.[0];
+        const plan = activeItem?.plan?.slug;
+        if (plan) {
+          await ctx.runMutation(internal.billing.upsertSubscriptionFromClerk, {
+            orgId,
+            subscriptionId: data.id,
+            plan,
+            status: data.status,
+            // Seat count is not on the subscription payload (it derives from
+            // org membership, which the org-membership webhook already syncs).
+            seats: undefined,
+            currentPeriodEnd:
+              typeof activeItem?.period_end === "number"
+                ? activeItem.period_end
+                : undefined,
+            eventAt:
+              typeof data.updated_at === "number"
+                ? data.updated_at
+                : Date.now(),
+          });
+        }
+      }
+      break;
+    }
+
+    case "subscriptionItem.canceled":
+    case "subscriptionItem.ended":
+    case "subscriptionItem.expired":
+    case "subscriptionItem.pastDue":
+    case "subscriptionItem.active": {
+      const data = evt.data;
+      const orgId = data.payer?.organization_id;
+      if (orgId) {
+        // Map the item event to a coarse subscription status for the mirror.
+        const statusByType: Record<string, string> = {
+          "subscriptionItem.canceled": "canceled",
+          "subscriptionItem.ended": "ended",
+          "subscriptionItem.expired": "expired",
+          "subscriptionItem.pastDue": "past_due",
+          "subscriptionItem.active": "active",
+        };
+        const status = statusByType[evt.type] ?? data.status;
+        await ctx.runMutation(
+          internal.billing.updateSubscriptionStatusFromClerk,
+          {
+            orgId,
+            status,
+            eventAt:
+              typeof data.updated_at === "number"
+                ? data.updated_at
+                : Date.now(),
+          },
+        );
+      }
+      break;
+    }
+    // ===== END PHASE 5 =====
+
     // Later phases append billing event branches here.
     default:
       // Acknowledge unhandled events so Clerk doesn't retry them.
@@ -160,6 +234,55 @@ type ClerkWebhookEvent =
         organization: { id: string };
         public_user_data: ClerkPublicUserData;
       };
+    }
+  // ===== PHASE 5: Billing & plans =====
+  | {
+      type:
+        | "subscription.created"
+        | "subscription.updated"
+        | "subscription.active"
+        | "subscription.pastDue";
+      data: ClerkBillingSubscription;
+    }
+  | {
+      type:
+        | "subscriptionItem.canceled"
+        | "subscriptionItem.ended"
+        | "subscriptionItem.expired"
+        | "subscriptionItem.pastDue"
+        | "subscriptionItem.active";
+      data: ClerkBillingSubscriptionItem;
     };
+// ===== END PHASE 5 =====
+
+// ---------------------------------------------------------------------------
+// PHASE 5: minimal Clerk billing webhook payload types (only fields consumed).
+// ---------------------------------------------------------------------------
+interface ClerkBillingPayer {
+  user_id?: string | null;
+  organization_id?: string | null;
+}
+
+interface ClerkBillingPlan {
+  slug?: string;
+  name?: string;
+}
+
+interface ClerkBillingSubscriptionItem {
+  id: string;
+  status: string;
+  plan?: ClerkBillingPlan | null;
+  payer?: ClerkBillingPayer | null;
+  period_end?: number | null;
+  updated_at?: number;
+}
+
+interface ClerkBillingSubscription {
+  id: string;
+  status: string;
+  payer?: ClerkBillingPayer | null;
+  items?: ClerkBillingSubscriptionItem[];
+  updated_at?: number;
+}
 
 export default http;

@@ -11,6 +11,9 @@ importers:
       '@clerk/nextjs':
         specifier: ^7.5.5
         version: 7.5.5(next@16.2.9(@babel/core@7.29.7)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      '@convex-dev/rate-limiter':
+        specifier: ^0.3.2
+        version: 0.3.2(convex@1.41.0(@clerk/react@6.10.2(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react@19.2.4))(react@19.2.4)
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -249,6 +252,15 @@ packages:
       react:
         optional: true
       react-dom:
+        optional: true
+
+  '@convex-dev/rate-limiter@0.3.2':
+    resolution: {integrity: sha512-+oBPsBfFbzdxiF/9XaaTQmVnvDlvEfg/c69/v8LxTbw4VLuiflIKlfnPQL8OS0azXQQ11hcPWHmU8ytFmHKDXA==}
+    peerDependencies:
+      convex: ^1.24.8
+      react: ^18.2.0 || ^19.0.0
+    peerDependenciesMeta:
+      react:
         optional: true
 
   '@dotenvx/dotenvx@1.73.1':
@@ -4228,6 +4240,12 @@ snapshots:
     optionalDependencies:
       react: 19.2.4
       react-dom: 19.2.4(react@19.2.4)
+
+  '@convex-dev/rate-limiter@0.3.2(convex@1.41.0(@clerk/react@6.10.2(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react@19.2.4))(react@19.2.4)':
+    dependencies:
+      convex: 1.41.0(@clerk/react@6.10.2(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react@19.2.4)
+    optionalDependencies:
+      react: 19.2.4
 
   '@dotenvx/dotenvx@1.73.1':
     dependencies:
