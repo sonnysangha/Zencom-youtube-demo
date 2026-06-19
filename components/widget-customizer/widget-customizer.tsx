@@ -5,6 +5,7 @@ import { useMutation, useQuery } from "convex/react";
 import {
   Check,
   Copy,
+  ExternalLink,
   Loader2,
   Plus,
   RotateCcw,
@@ -514,6 +515,15 @@ function InstallSnippet({ publicKey }: { publicKey?: string }) {
     }
   };
 
+  const openSampleSite = () => {
+    if (!publicKey) return;
+    window.open(
+      `/sample-site?key=${encodeURIComponent(publicKey)}`,
+      "_blank",
+      "noopener,noreferrer",
+    );
+  };
+
   return (
     <div className="flex flex-col gap-3">
       <div>
@@ -541,6 +551,31 @@ function InstallSnippet({ publicKey }: { publicKey?: string }) {
           )}
           {copied ? "Copied" : "Copy"}
         </Button>
+      </div>
+      <div className="flex flex-col gap-2 rounded-md border border-dashed border-border p-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium">Try it on a sample site</p>
+            <p className="text-xs text-muted-foreground">
+              Opens a demo website with your live widget embedded — no install
+              needed.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={openSampleSite}
+            disabled={!publicKey}
+          >
+            <ExternalLink className="size-3.5" />
+            Open sample website
+          </Button>
+        </div>
+        {!publicKey ? (
+          <p className="text-xs text-muted-foreground">
+            Your public key is still loading…
+          </p>
+        ) : null}
       </div>
     </div>
   );
