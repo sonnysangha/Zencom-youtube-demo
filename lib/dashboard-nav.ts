@@ -1,4 +1,10 @@
-import { LayoutDashboard, Users, type LucideIcon } from "lucide-react";
+import {
+  BookOpen,
+  LayoutDashboard,
+  Sparkles,
+  Users,
+  type LucideIcon,
+} from "lucide-react";
 
 export type OrgRole = "org:admin" | "org:member";
 
@@ -31,7 +37,16 @@ export const navItems: NavItem[] = [
   },
   // Wave A/B tracks append here, e.g.:
   // { title: "Inbox", href: "/dashboard/inbox", icon: Inbox },
-  // { title: "Knowledge base", href: "/dashboard/knowledge", icon: BookOpen, requiredRole: "org:admin" },
   // { title: "Leads", href: "/dashboard/leads", icon: Contact },
   // { title: "Billing", href: "/dashboard/billing", icon: CreditCard, requiredRole: "org:admin" },
+
+  // ===== PHASE 3: Knowledge base + RAG =====
+  {
+    title: "Knowledge base",
+    href: "/dashboard/knowledge",
+    icon: BookOpen,
+    requiredRole: "org:admin",
+  },
+  { title: "Ask KB", href: "/dashboard/ask-kb", icon: Sparkles },
+  // ===== END PHASE 3 =====
 ];
