@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users, type LucideIcon } from "lucide-react";
+import { Inbox, LayoutDashboard, Users, type LucideIcon } from "lucide-react";
 
 export type OrgRole = "org:admin" | "org:member";
 
@@ -29,8 +29,10 @@ export const navItems: NavItem[] = [
     icon: Users,
     requiredRole: "org:admin",
   },
+  // ===== PHASE 2 =====
+  { title: "Inbox", href: "/dashboard/inbox", icon: Inbox },
+  // ===== END PHASE 2 =====
   // Wave A/B tracks append here, e.g.:
-  // { title: "Inbox", href: "/dashboard/inbox", icon: Inbox },
   // { title: "Knowledge base", href: "/dashboard/knowledge", icon: BookOpen, requiredRole: "org:admin" },
   // { title: "Leads", href: "/dashboard/leads", icon: Contact },
   // { title: "Billing", href: "/dashboard/billing", icon: CreditCard, requiredRole: "org:admin" },

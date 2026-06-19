@@ -40,4 +40,80 @@ export default defineSchema({
   // --------------------------------------------------------------------------
   // END FOUNDATION (Phase 1) — later tracks append new tables below this line.
   // --------------------------------------------------------------------------
+
+  // ===== PHASE 2: Real-time team inbox + embeddable widget =====
+  // Human chat only (AI deferred to Phase 7). A visitor on an embedded widget
+  // talks to an agent in the dashboard inbox. Tenancy: every row carries the
+  // Clerk `orgId`. Public/widget traffic NEVER trusts a client orgId — it is
+  // derived server-side from a workspace `publicKey` + a visitor session token.
+
+  // One row per visitor↔workspace conversation.
+  conversations: defineTable({
+    orgId: v.string(),
+    status: v.union(v.literal("open"), v.literal("closed")),
+    // Clerk user id of the assigned agent, when assigned.
+    assigneeId: v.optional(v.string()),
+    // FK to the visitorSessions row that owns this conversation.
+    visitorId: v.id("visitorSessions"),
+    // Denormalized for inbox sorting without reading messages.
+    lastMessageAt: v.number(),
+    // Count of visitor messages the agents haven't "seen" yet (inbox badge).
+    unreadCount: v.number(),
+  })
+    .index("by_org", ["orgId"])
+    .index("by_org_and_status", ["orgId", "status"])
+    .index("by_visitor", ["visitorId"]),
+
+  // One row per chat message. `authorType` distinguishes visitor vs human agent
+  // (AI author type is added in Phase 7).
+  messages: defineTable({
+    orgId: v.string(),
+    conversationId: v.id("conversations"),
+    authorType: v.union(v.literal("visitor"), v.literal("agent")),
+    // Clerk user id for agent messages; null/undefined for visitor messages.
+    authorId: v.optional(v.string()),
+    body: v.string(),
+  })
+    .index("by_conversation", ["conversationId"])
+    .index("by_org", ["orgId"]),
+
+  // One row per anonymous widget visitor (keyed by a client-held token).
+  visitorSessions: defineTable({
+    orgId: v.string(),
+    token: v.string(),
+    name: v.optional(v.string()),
+    email: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    lastSeenAt: v.number(),
+  })
+    .index("by_token", ["token"])
+    .index("by_org", ["orgId"]),
+
+  // High-churn presence pings. Separate table per the guidelines so frequent
+  // writes don't contend with conversation/message reads. `who` is the actor id
+  // (a Clerk user id for agents, the visitor token for visitors).
+  presence: defineTable({
+    orgId: v.string(),
+    conversationId: v.id("conversations"),
+    who: v.string(),
+    actorType: v.union(v.literal("visitor"), v.literal("agent")),
+    lastActiveAt: v.number(),
+  })
+    .index("by_conversation", ["conversationId"])
+    .index("by_conversation_and_who", ["conversationId", "who"])
+    .index("by_org", ["orgId"]),
+
+  // High-churn typing indicators. Also separate from conversations for the same
+  // contention reason. A row exists only while someone is actively typing.
+  typing: defineTable({
+    orgId: v.string(),
+    conversationId: v.id("conversations"),
+    who: v.string(),
+    actorType: v.union(v.literal("visitor"), v.literal("agent")),
+    lastActiveAt: v.number(),
+  })
+    .index("by_conversation", ["conversationId"])
+    .index("by_conversation_and_who", ["conversationId", "who"])
+    .index("by_org", ["orgId"]),
+  // ===== END PHASE 2 =====
 });
