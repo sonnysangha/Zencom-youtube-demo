@@ -10,6 +10,13 @@ import {
   messageValidator,
   resolveWorkspaceByPublicKey,
 } from "./lib/inbox";
+// ===== PHASE 4: widget config + lead capture (additive imports) =====
+import {
+  resolveWidgetConfig,
+  widgetConfigValidator,
+} from "./lib/widgetConfig";
+import { buildSearchText } from "./lib/leads";
+// ===== END PHASE 4 imports =====
 
 /**
  * PUBLIC widget API — called by the embedded /widget iframe with a PLAIN
@@ -76,6 +83,23 @@ export const initSession = mutation({
       });
     }
 
+    // ===== PHASE 4: capture a lead when the widget passes contact details =====
+    // The lead-capture form in the widget submits name/email here. We only
+    // record a lead when we have at least a name or email; orgId is the
+    // server-resolved workspace org (never a client value). De-duped per
+    // visitor inside `recordLeadInternal`.
+    if ((args.name && args.name.trim()) || (args.email && args.email.trim())) {
+      await recordLead(ctx, {
+        orgId: workspace.orgId,
+        name: args.name ?? "",
+        email: args.email ?? "",
+        phone: args.phone,
+        source: "widget",
+        visitorId,
+      });
+    }
+    // ===== END PHASE 4 =====
+
     return {
       orgId: workspace.orgId,
       workspaceName: workspace.name,
@@ -84,6 +108,140 @@ export const initSession = mutation({
     };
   },
 });
+
+// ===== PHASE 4: public widget config read + lead-capture helpers =====
+
+/**
+ * PUBLIC: resolve the widget appearance/behavior config for a workspace from
+ * its public key. Returns the workspace defaults when unset. No visitor token
+ * required — this is read before a session exists so the launcher/panel can be
+ * themed and the lead-capture gate decided on first paint.
+ */
+export const getWidgetConfig = query({
+  args: { publicKey: v.string() },
+  returns: v.union(
+    v.null(),
+    v.object({
+      workspaceName: v.string(),
+      config: widgetConfigValidator,
+    }),
+  ),
+  handler: async (ctx, args) => {
+    const workspace = await resolveWorkspaceByPublicKey(ctx, args.publicKey);
+    if (workspace === null) {
+      return null;
+    }
+    const config = await resolveWidgetConfig(ctx, workspace.orgId);
+    return { workspaceName: workspace.name, config };
+  },
+});
+
+/**
+ * PUBLIC: capture a lead submitted from the widget's lead form, linked to the
+ * authorized visitor. orgId is resolved server-side from the publicKey; the
+ * client never supplies it. Returns null (the lead id stays server-side).
+ */
+export const captureLead = mutation({
+  args: {
+    publicKey: v.string(),
+    token: v.string(),
+    name: v.string(),
+    email: v.string(),
+    phone: v.optional(v.string()),
+    conversationId: v.optional(v.id("conversations")),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const { workspace, session } = await authorizeVisitor(
+      ctx,
+      args.publicKey,
+      args.token,
+    );
+
+    const name = args.name.trim();
+    const email = args.email.trim();
+    if (name.length === 0 && email.length === 0) {
+      throw new Error("Provide a name or email");
+    }
+
+    // Mirror the captured contact onto the visitor session too, so the inbox
+    // shows the visitor's name/email immediately.
+    await ctx.db.patch(session._id, {
+      name: name || session.name,
+      email: email || session.email,
+      phone: args.phone?.trim() || session.phone,
+      lastSeenAt: Date.now(),
+    });
+
+    await recordLead(ctx, {
+      orgId: workspace.orgId,
+      name,
+      email,
+      phone: args.phone,
+      source: "widget",
+      visitorId: session._id,
+      conversationId: args.conversationId,
+    });
+    return null;
+  },
+});
+
+/**
+ * Record/update a lead within a widget mutation. Kept local to avoid a cross
+ * runtime hop — de-duped per (org, visitor). orgId is the server-resolved
+ * workspace org; this helper is only ever called with a trusted orgId.
+ */
+async function recordLead(
+  ctx: MutationCtx,
+  args: {
+    orgId: string;
+    name: string;
+    email: string;
+    phone?: string;
+    source: string;
+    visitorId?: Id<"visitorSessions">;
+    conversationId?: Id<"conversations">;
+  },
+): Promise<void> {
+  const name = args.name.trim();
+  const email = args.email.trim();
+  const phone = args.phone?.trim() || undefined;
+
+  if (args.visitorId !== undefined) {
+    const existing = await ctx.db
+      .query("leads")
+      .withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+      .order("desc")
+      .take(200);
+    const match = existing.find((l) => l.visitorId === args.visitorId);
+    if (match) {
+      const nextName = name || match.name;
+      const nextEmail = email || match.email;
+      const nextPhone = phone ?? match.phone;
+      await ctx.db.patch(match._id, {
+        name: nextName,
+        email: nextEmail,
+        phone: nextPhone,
+        conversationId: args.conversationId ?? match.conversationId,
+        searchText: buildSearchText(nextName, nextEmail, nextPhone),
+      });
+      return;
+    }
+  }
+
+  await ctx.db.insert("leads", {
+    orgId: args.orgId,
+    name,
+    email,
+    phone,
+    status: "new",
+    source: args.source,
+    conversationId: args.conversationId,
+    visitorId: args.visitorId,
+    searchText: buildSearchText(name, email, phone),
+  });
+}
+// ===== END PHASE 4 =====
 
 /**
  * Find the visitor's current open conversation, or start a new one. Returns the

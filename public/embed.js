@@ -52,6 +52,24 @@
   var OPEN_HEIGHT = 640;
   var isOpen = false;
 
+  // ===== PHASE 4: live config (appearance + proactive), applied once the =====
+  // iframe relays it via postMessage("zencom:config"). Defaults mirror the
+  // Convex widget-config defaults so the launcher looks right before config
+  // arrives. Phase 7 also touches this file — keep edits inside these markers.
+  var cfg = {
+    primaryColor: "#4f46e5",
+    radius: 16,
+    marginX: 20,
+    marginY: 20,
+    launcherPosition: "bottom-right",
+    proactiveEnabled: false,
+    proactiveDelaySeconds: 8,
+    proactiveMessage: "",
+  };
+  var proactiveTimer = null;
+  var proactiveShown = false;
+  // ===== END PHASE 4 =====
+
   // ---- Launcher button -----------------------------------------------------
   var launcher = document.createElement("button");
   launcher.setAttribute("aria-label", "Open chat");
@@ -104,6 +122,39 @@
     boxShadow: "0 2px 8px rgba(0,0,0,0.25)",
   });
 
+  // ---- Proactive bubble (Phase 4) -----------------------------------------
+  var proactive = document.createElement("div");
+  setStyle(proactive, {
+    position: "fixed",
+    bottom: "90px",
+    right: "20px",
+    maxWidth: "260px",
+    padding: "12px 14px",
+    borderRadius: "14px",
+    background: "#ffffff",
+    color: "#18181b",
+    fontSize: "14px",
+    lineHeight: "1.4",
+    fontFamily: "system-ui, -apple-system, sans-serif",
+    boxShadow: "0 8px 28px rgba(0,0,0,0.22)",
+    zIndex: "2147483645",
+    display: "none",
+    cursor: "pointer",
+  });
+  proactive.innerHTML =
+    '<span data-zc-msg></span><span aria-hidden="true" ' +
+    'style="position:absolute;top:4px;right:8px;color:#a1a1aa;font-size:14px;">×</span>';
+  proactive.addEventListener("click", function (e) {
+    // The little × dismisses; clicking the body opens the chat.
+    var target = e.target;
+    if (target && target.getAttribute && target.getAttribute("aria-hidden")) {
+      proactive.style.display = "none";
+    } else {
+      proactive.style.display = "none";
+      open();
+    }
+  });
+
   // ---- Iframe --------------------------------------------------------------
   var iframe = document.createElement("iframe");
   iframe.title = "Zencom chat";
@@ -130,6 +181,7 @@
   function mount() {
     document.body.appendChild(iframe);
     document.body.appendChild(badge);
+    document.body.appendChild(proactive); // Phase 4
     document.body.appendChild(launcher);
   }
 
@@ -143,6 +195,12 @@
     isOpen = true;
     iframe.style.display = "block";
     badge.style.display = "none";
+    proactive.style.display = "none"; // Phase 4
+    proactiveShown = true; // Phase 4: don't re-nudge after the visitor engaged
+    if (proactiveTimer) {
+      clearTimeout(proactiveTimer); // Phase 4
+      proactiveTimer = null;
+    }
     launcher.innerHTML = closeIcon();
     launcher.setAttribute("aria-label", "Close chat");
     post({ type: "zencom:open" });
@@ -186,8 +244,73 @@
       } else {
         badge.style.display = "none";
       }
+    } else if (data.type === "zencom:config") {
+      // ===== PHASE 4: appearance + proactive config relayed from the iframe =====
+      applyConfig(data.config || {});
     }
   });
+
+  // ===== PHASE 4: apply appearance + (re)arm the proactive nudge ============
+  function applyConfig(next) {
+    if (typeof next.primaryColor === "string") cfg.primaryColor = next.primaryColor;
+    if (typeof next.radius === "number") cfg.radius = next.radius;
+    if (typeof next.marginX === "number") cfg.marginX = next.marginX;
+    if (typeof next.marginY === "number") cfg.marginY = next.marginY;
+    if (next.launcherPosition === "bottom-left" || next.launcherPosition === "bottom-right")
+      cfg.launcherPosition = next.launcherPosition;
+    if (typeof next.proactiveEnabled === "boolean")
+      cfg.proactiveEnabled = next.proactiveEnabled;
+    if (typeof next.proactiveDelaySeconds === "number")
+      cfg.proactiveDelaySeconds = next.proactiveDelaySeconds;
+    if (typeof next.proactiveMessage === "string")
+      cfg.proactiveMessage = next.proactiveMessage;
+
+    var isLeft = cfg.launcherPosition === "bottom-left";
+    var side = isLeft ? "left" : "right";
+    var otherSide = isLeft ? "right" : "left";
+
+    // Launcher.
+    launcher.style.background = cfg.primaryColor;
+    launcher.style.bottom = cfg.marginY + "px";
+    launcher.style[side] = cfg.marginX + "px";
+    launcher.style[otherSide] = "auto";
+
+    // Iframe panel.
+    iframe.style.bottom = cfg.marginY + 68 + "px";
+    iframe.style[side] = cfg.marginX + "px";
+    iframe.style[otherSide] = "auto";
+    iframe.style.borderRadius = cfg.radius + "px";
+
+    // Badge follows the launcher side.
+    badge.style.bottom = cfg.marginY + 40 + "px";
+    badge.style[side] = Math.max(0, cfg.marginX - 4) + "px";
+    badge.style[otherSide] = "auto";
+
+    // Proactive bubble side.
+    proactive.style.bottom = cfg.marginY + 70 + "px";
+    proactive.style[side] = cfg.marginX + "px";
+    proactive.style[otherSide] = "auto";
+
+    armProactive();
+  }
+
+  function armProactive() {
+    if (proactiveTimer) {
+      clearTimeout(proactiveTimer);
+      proactiveTimer = null;
+    }
+    if (!cfg.proactiveEnabled || proactiveShown || isOpen) return;
+    var delay = Math.max(1, cfg.proactiveDelaySeconds) * 1000;
+    proactiveTimer = setTimeout(function () {
+      if (!isOpen && !proactiveShown) {
+        proactiveShown = true;
+        proactive.querySelector("[data-zc-msg]").textContent =
+          cfg.proactiveMessage || "👋 Need a hand? We're here.";
+        proactive.style.display = "block";
+      }
+    }, delay);
+  }
+  // ===== END PHASE 4 =====
 
   // ---- helpers -------------------------------------------------------------
   function setStyle(el, styles) {

@@ -202,4 +202,75 @@ export default defineSchema({
     .index("by_org", ["orgId"])
     .index("by_org_and_metric_and_period", ["orgId", "metric", "period"]),
   // ===== END PHASE 5 =====
+
+  // ===== PHASE 4: Lead management + widget customizer =====
+  // Depends on Phase 2 (widget + visitorSessions). Both tables are tenant-scoped
+  // by the Clerk `orgId`. Leads can be captured publicly from the widget (orgId
+  // resolved server-side from a workspace publicKey — never trusted from the
+  // client) and are then managed by authed agents in the dashboard. Widget
+  // configs are per-workspace appearance/behavior settings, read publicly by the
+  // embedded widget and written only by org admins.
+
+  // One row per captured lead. `source` records where it came from (e.g.
+  // "widget", "manual"). `conversationId`/`visitorId` optionally link a lead
+  // back to the Phase 2 chat that produced it.
+  leads: defineTable({
+    orgId: v.string(),
+    name: v.string(),
+    email: v.string(),
+    phone: v.optional(v.string()),
+    status: v.union(
+      v.literal("new"),
+      v.literal("contacted"),
+      v.literal("closed"),
+    ),
+    source: v.string(),
+    conversationId: v.optional(v.id("conversations")),
+    visitorId: v.optional(v.id("visitorSessions")),
+    notes: v.optional(v.string()),
+    // Denormalized lowercase "name email phone" haystack for the search index.
+    // Maintained on every insert/update so search stays index-backed.
+    searchText: v.string(),
+  })
+    .index("by_org", ["orgId"])
+    .index("by_org_and_status", ["orgId", "status"])
+    // Full-text search over the lead's name/email/phone, scoped per org via a
+    // filter field on the search index. Powers the leads table search box.
+    .searchIndex("search_contact", {
+      searchField: "searchText",
+      filterFields: ["orgId", "status"],
+    }),
+
+  // One row per workspace: the embeddable widget's appearance + behavior config.
+  // Keyed by orgId (a dedicated table rather than churning workspaces.settings).
+  // Read publicly by the widget via `widget.getWidgetConfig` (resolved by
+  // publicKey); written only by admins via `widgetConfig.update`.
+  widgetConfigs: defineTable({
+    orgId: v.string(),
+    // ---- Appearance ----
+    primaryColor: v.string(), // hex, e.g. "#4f46e5"
+    radius: v.number(), // launcher/panel corner radius in px
+    marginX: v.number(), // horizontal offset from the screen edge (px)
+    marginY: v.number(), // vertical offset from the screen edge (px)
+    title: v.string(), // header title shown in the widget
+    logoUrl: v.optional(v.string()),
+    launcherPosition: v.union(
+      v.literal("bottom-right"),
+      v.literal("bottom-left"),
+    ),
+    soundEnabled: v.boolean(),
+    // ---- Behavior ----
+    proactiveEnabled: v.boolean(),
+    proactiveDelaySeconds: v.number(),
+    proactiveMessage: v.string(),
+    leadCaptureEnabled: v.boolean(),
+    // Which lead fields are required before chat unlocks (gating).
+    leadRequireName: v.boolean(),
+    leadRequireEmail: v.boolean(),
+    leadRequirePhone: v.boolean(),
+    // Optional FAQ entries surfaced in the widget. Bounded small list, so an
+    // inline array is fine (never grows unbounded — admin-curated).
+    faq: v.array(v.object({ question: v.string(), answer: v.string() })),
+  }).index("by_org", ["orgId"]),
+  // ===== END PHASE 4 =====
 });

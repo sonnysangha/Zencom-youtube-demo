@@ -1,8 +1,10 @@
 import {
   BookOpen,
+  Contact,
   CreditCard,
   Inbox,
   LayoutDashboard,
+  MessageSquareDashed,
   Sparkles,
   Users,
   type LucideIcon,
@@ -60,4 +62,14 @@ export const navItems: NavItem[] = [
     requiredRole: "org:admin",
   },
   // ===== END PHASE 5 =====
+
+  // ===== PHASE 4: Lead management + widget customizer =====
+  { title: "Leads", href: "/dashboard/leads", icon: Contact },
+  {
+    title: "Widget",
+    href: "/dashboard/widget",
+    icon: MessageSquareDashed,
+    requiredRole: "org:admin",
+  },
+  // ===== END PHASE 4 =====
 ];

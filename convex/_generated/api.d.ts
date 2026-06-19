@@ -15,15 +15,19 @@ import type * as http from "../http.js";
 import type * as inbox from "../inbox.js";
 import type * as ingest from "../ingest.js";
 import type * as knowledge from "../knowledge.js";
+import type * as leads from "../leads.js";
 import type * as lib_ai from "../lib/ai.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_customFunctions from "../lib/customFunctions.js";
 import type * as lib_inbox from "../lib/inbox.js";
+import type * as lib_leads from "../lib/leads.js";
 import type * as lib_quota from "../lib/quota.js";
 import type * as lib_roles from "../lib/roles.js";
+import type * as lib_widgetConfig from "../lib/widgetConfig.js";
 import type * as members from "../members.js";
 import type * as pdf from "../pdf.js";
 import type * as widget from "../widget.js";
+import type * as widgetConfig from "../widgetConfig.js";
 import type * as workspaces from "../workspaces.js";
 
 import type {
@@ -40,15 +44,19 @@ declare const fullApi: ApiFromModules<{
   inbox: typeof inbox;
   ingest: typeof ingest;
   knowledge: typeof knowledge;
+  leads: typeof leads;
   "lib/ai": typeof lib_ai;
   "lib/auth": typeof lib_auth;
   "lib/customFunctions": typeof lib_customFunctions;
   "lib/inbox": typeof lib_inbox;
+  "lib/leads": typeof lib_leads;
   "lib/quota": typeof lib_quota;
   "lib/roles": typeof lib_roles;
+  "lib/widgetConfig": typeof lib_widgetConfig;
   members: typeof members;
   pdf: typeof pdf;
   widget: typeof widget;
+  widgetConfig: typeof widgetConfig;
   workspaces: typeof workspaces;
 }>;
 

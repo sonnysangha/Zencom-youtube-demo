@@ -52,3 +52,20 @@ export const adminMutation = customMutation(
     return { orgId, userId, orgRole };
   }),
 );
+
+/**
+ * Authenticated, org-scoped query that additionally requires the caller to be
+ * an org admin. Used for admin-only config reads (e.g. the widget customizer).
+ * Throws "Forbidden: admin access required" otherwise. (Added by Phase 4.)
+ */
+export const adminQuery = customQuery(
+  query,
+  customCtx(async (ctx) => {
+    const identity = await getCurrentUser(ctx);
+    const { orgId, userId, orgRole } = getOrgContext(identity);
+    if (orgRole !== "org:admin") {
+      throw new Error("Forbidden: admin access required");
+    }
+    return { orgId, userId, orgRole };
+  }),
+);
