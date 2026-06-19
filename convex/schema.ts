@@ -64,15 +64,34 @@ export default defineSchema({
     .index("by_org_and_status", ["orgId", "status"])
     .index("by_visitor", ["visitorId"]),
 
-  // One row per chat message. `authorType` distinguishes visitor vs human agent
-  // (AI author type is added in Phase 7).
+  // One row per chat message. `authorType` distinguishes visitor vs human agent.
+  // PHASE 7 adds the `"ai"` author type plus optional `sources` (RAG citations)
+  // for AI-generated answers. These two fields are appended additively so the
+  // Phase 2 (human chat) reads continue to work unchanged.
   messages: defineTable({
     orgId: v.string(),
     conversationId: v.id("conversations"),
-    authorType: v.union(v.literal("visitor"), v.literal("agent")),
-    // Clerk user id for agent messages; null/undefined for visitor messages.
+    // ===== PHASE 7: add "ai" as a third author type =====
+    authorType: v.union(
+      v.literal("visitor"),
+      v.literal("agent"),
+      v.literal("ai"),
+    ),
+    // ===== END PHASE 7 =====
+    // Clerk user id for agent messages; null/undefined for visitor/ai messages.
     authorId: v.optional(v.string()),
     body: v.string(),
+    // ===== PHASE 7: RAG source citations for AI answers (omitted otherwise) =====
+    sources: v.optional(
+      v.array(
+        v.object({
+          entryId: v.string(),
+          title: v.optional(v.string()),
+          score: v.number(),
+        }),
+      ),
+    ),
+    // ===== END PHASE 7 =====
   })
     .index("by_conversation", ["conversationId"])
     .index("by_org", ["orgId"]),
@@ -202,4 +221,25 @@ export default defineSchema({
     .index("by_org", ["orgId"])
     .index("by_org_and_metric_and_period", ["orgId", "metric", "period"]),
   // ===== END PHASE 5 =====
+
+  // ===== PHASE 7: Widget AI integration =====
+  // Maps each widget conversation to its per-conversation Agent thread (the
+  // thread that owns the AI answer history + delta streaming) and holds the
+  // AI on/off gate for that conversation. `aiEnabled` is the takeover flag:
+  // Phase 2's human takeover flips it to false (AI stops); re-enabling returns
+  // control to the agent. One row per conversation, created lazily on the first
+  // AI answer. The Agent thread itself is owned by `userId = orgId` (server
+  // derived) so streaming/listing stays tenant-isolated.
+  conversationThreads: defineTable({
+    orgId: v.string(),
+    conversationId: v.id("conversations"),
+    // Agent component thread id (string handle, not a Convex doc id).
+    threadId: v.string(),
+    // When true, a visitor message triggers an AI answer. Human takeover sets
+    // this false; the agent can re-enable it.
+    aiEnabled: v.boolean(),
+  })
+    .index("by_conversation", ["conversationId"])
+    .index("by_org", ["orgId"]),
+  // ===== END PHASE 7 =====
 });

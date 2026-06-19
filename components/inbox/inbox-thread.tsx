@@ -17,6 +17,7 @@ import {
   Hand,
   Lock,
   Send,
+  Sparkles,
   Unlock,
   UserCheck,
 } from "lucide-react";
@@ -65,6 +66,9 @@ export function InboxThread({
   const assign = useMutation(api.inbox.assign);
   const setStatus = useMutation(api.inbox.setStatus);
   const takeover = useMutation(api.inbox.takeover);
+  // ===== PHASE 7: toggle the AI assistant on/off for this conversation. =====
+  const setAiEnabled = useMutation(api.inbox.setAiEnabled);
+  // ===== END PHASE 7 =====
 
   const messages = useMemo(
     () => [...messagesDesc].reverse(),
@@ -139,6 +143,9 @@ export function InboxThread({
   }
 
   const { conversation, visitor } = detail;
+  // ===== PHASE 7: AI gate state for this conversation. =====
+  const aiEnabled = detail.aiEnabled;
+  // ===== END PHASE 7 =====
   const visitorName =
     visitor?.name || visitor?.email || "Anonymous visitor";
   const assignee = members?.find((m) => m.userId === conversation.assigneeId);
@@ -229,7 +236,32 @@ export function InboxThread({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Takeover (assign to me) */}
+          {/* ===== PHASE 7: AI on/off toggle ===== */}
+          <Button
+            variant={aiEnabled ? "default" : "outline"}
+            size="sm"
+            onClick={() => {
+              const next = !aiEnabled;
+              void setAiEnabled({ conversationId, enabled: next }).then(() =>
+                toast.success(
+                  next
+                    ? "AI assistant re-enabled"
+                    : "AI assistant paused for this conversation",
+                ),
+              );
+            }}
+            title={
+              aiEnabled
+                ? "AI is answering — click to pause and take over"
+                : "AI is paused — click to hand back to the assistant"
+            }
+          >
+            <Sparkles className="size-3.5" />
+            {aiEnabled ? "AI on" : "AI off"}
+          </Button>
+          {/* ===== END PHASE 7 ===== */}
+
+          {/* Takeover (assign to me) — PHASE 7: also pauses AI server-side. */}
           {!isMine && (
             <Button
               variant="secondary"
@@ -291,14 +323,18 @@ export function InboxThread({
               <MessageBubble
                 key={m._id}
                 mine={m.authorType === "agent"}
+                isAi={m.authorType === "ai"}
                 body={m.body}
                 at={m._creationTime}
+                sources={m.sources}
                 authorLabel={
                   m.authorType === "agent"
                     ? m.authorId === userId
                       ? "You"
                       : agentLabel(members, m.authorId)
-                    : visitorName
+                    : m.authorType === "ai"
+                      ? "AI assistant"
+                      : visitorName
                 }
               />
             ))
@@ -357,14 +393,18 @@ export function InboxThread({
 
 function MessageBubble({
   mine,
+  isAi,
   body,
   at,
   authorLabel,
+  sources,
 }: {
   mine: boolean;
+  isAi?: boolean;
   body: string;
   at: number;
   authorLabel: string;
+  sources?: { entryId: string; title?: string; score: number }[];
 }) {
   return (
     <div className={cn("flex flex-col", mine ? "items-end" : "items-start")}>
@@ -373,11 +413,33 @@ function MessageBubble({
           "max-w-[72%] whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2 text-sm",
           mine
             ? "bg-primary text-primary-foreground rounded-br-sm"
-            : "bg-muted text-foreground rounded-bl-sm",
+            : isAi
+              ? "rounded-bl-sm border border-primary/40 bg-muted text-foreground"
+              : "bg-muted text-foreground rounded-bl-sm",
         )}
       >
+        {/* ===== PHASE 7: AI label inside the bubble ===== */}
+        {isAi && (
+          <span className="mb-1 flex items-center gap-1 text-[11px] font-medium text-primary">
+            <Sparkles className="size-3" />
+            AI assistant
+          </span>
+        )}
         {body}
       </div>
+      {/* ===== PHASE 7: AI source citations ===== */}
+      {isAi && sources && sources.length > 0 && (
+        <div className="mt-1 flex max-w-[72%] flex-wrap items-center gap-1 px-1">
+          <span className="text-[10px] font-medium text-muted-foreground">
+            Sources:
+          </span>
+          {sources.map((s) => (
+            <Badge key={s.entryId} variant="secondary" className="gap-1">
+              {s.title ?? "Untitled"}
+            </Badge>
+          ))}
+        </div>
+      )}
       <span className="mt-0.5 px-1 text-[10px] text-muted-foreground">
         {authorLabel} · {formatClock(at)}
       </span>

@@ -18,10 +18,21 @@ export const PRESENCE_TTL_MS = 15_000;
 export const TYPING_TTL_MS = 6_000;
 
 export const statusValidator = v.union(v.literal("open"), v.literal("closed"));
+// PHASE 7 extends authorType with "ai" (AI-generated answers). Additive: the
+// Phase 2 visitor/agent reads continue to validate unchanged.
 export const authorTypeValidator = v.union(
   v.literal("visitor"),
   v.literal("agent"),
+  v.literal("ai"),
 );
+
+// ===== PHASE 7: RAG citation shape carried on AI answer messages. =====
+export const sourceValidator = v.object({
+  entryId: v.string(),
+  title: v.optional(v.string()),
+  score: v.number(),
+});
+// ===== END PHASE 7 =====
 
 // Precise document validators (incl. system fields) reused across functions.
 export const conversationValidator = v.object({
@@ -43,6 +54,9 @@ export const messageValidator = v.object({
   authorType: authorTypeValidator,
   authorId: v.optional(v.string()),
   body: v.string(),
+  // ===== PHASE 7: optional citations on AI answers. =====
+  sources: v.optional(v.array(sourceValidator)),
+  // ===== END PHASE 7 =====
 });
 
 export const visitorSessionValidator = v.object({
@@ -84,7 +98,8 @@ export type InboxConversation = {
   visitorName?: string;
   visitorEmail?: string;
   lastMessagePreview?: string;
-  lastMessageAuthorType?: "visitor" | "agent";
+  // PHASE 7: "ai" added to author types.
+  lastMessageAuthorType?: "visitor" | "agent" | "ai";
 };
 
 /**

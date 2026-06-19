@@ -24,6 +24,7 @@ import type * as lib_roles from "../lib/roles.js";
 import type * as members from "../members.js";
 import type * as pdf from "../pdf.js";
 import type * as widget from "../widget.js";
+import type * as widgetAi from "../widgetAi.js";
 import type * as workspaces from "../workspaces.js";
 
 import type {
@@ -49,6 +50,7 @@ declare const fullApi: ApiFromModules<{
   members: typeof members;
   pdf: typeof pdf;
   widget: typeof widget;
+  widgetAi: typeof widgetAi;
   workspaces: typeof workspaces;
 }>;
 

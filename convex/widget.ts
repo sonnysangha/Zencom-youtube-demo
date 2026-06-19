@@ -1,5 +1,13 @@
 import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
+// ===== PHASE 7: AI streaming imports (additive) =====
+import {
+  listMessages as listAgentMessages,
+  syncStreams,
+  vStreamArgs,
+} from "@convex-dev/agent";
+import { components, internal } from "./_generated/api";
+// ===== END PHASE 7 =====
 import { mutation, query } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
@@ -184,6 +192,27 @@ export const sendVisitorMessage = mutation({
       await ctx.db.delete(typingRow._id);
     }
 
+    // ===== PHASE 7: trigger an AI answer unless a human has taken over. =====
+    // The AI gate lives on the conversationThreads row (aiEnabled). No row yet
+    // = AI on by default (first message in the conversation). Human takeover
+    // (convex/inbox.ts) flips aiEnabled to false. orgId is server-derived from
+    // the workspace; it is never trusted from the client.
+    const threadRow = await ctx.db
+      .query("conversationThreads")
+      .withIndex("by_conversation", (q) =>
+        q.eq("conversationId", args.conversationId),
+      )
+      .unique();
+    const aiEnabled = threadRow === null ? true : threadRow.aiEnabled;
+    if (aiEnabled) {
+      await ctx.scheduler.runAfter(0, internal.widgetAi.generateAnswer, {
+        orgId: workspace.orgId,
+        conversationId: args.conversationId,
+        prompt: body,
+      });
+    }
+    // ===== END PHASE 7 =====
+
     return messageId;
   },
 });
@@ -349,6 +378,150 @@ export const heartbeat = mutation({
     return null;
   },
 });
+
+// ===========================================================================
+// ===== PHASE 7: Widget AI — public streaming + status reads (additive) =====
+// ===========================================================================
+// These public functions let the embedded widget render the AI answer as it
+// streams (token-by-token via the Agent thread's delta sync) and show the AI
+// on/off status. Trust model is identical to the rest of this file: orgId is
+// resolved from the workspace publicKey and the visitor is authenticated by
+// token; the conversation must belong to that visitor. A client-supplied orgId
+// or threadId is never trusted — the threadId is looked up server-side from the
+// conversation and ownership is re-verified.
+
+/**
+ * AI status for the visitor's conversation: whether the AI is enabled (no human
+ * takeover) and the Agent threadId to stream from (null until the first AI
+ * answer has been triggered). The widget streams from `threadId` via
+ * `listAiThread` below.
+ */
+export const aiStatus = query({
+  args: {
+    publicKey: v.string(),
+    token: v.string(),
+    conversationId: v.id("conversations"),
+  },
+  returns: v.object({
+    aiEnabled: v.boolean(),
+    threadId: v.union(v.string(), v.null()),
+  }),
+  handler: async (ctx, args) => {
+    const { workspace, session } = await authorizeVisitor(
+      ctx,
+      args.publicKey,
+      args.token,
+    );
+    const conversation = await ctx.db.get(args.conversationId);
+    if (
+      conversation === null ||
+      conversation.orgId !== workspace.orgId ||
+      conversation.visitorId !== session._id
+    ) {
+      throw new Error("Conversation not found");
+    }
+    const row = await ctx.db
+      .query("conversationThreads")
+      .withIndex("by_conversation", (q) =>
+        q.eq("conversationId", args.conversationId),
+      )
+      .unique();
+    // An empty-string threadId is a placeholder row (AI gate pre-set before any
+    // answer); surface it as null so the widget doesn't try to stream nothing.
+    const threadId =
+      row !== null && row.threadId.length > 0 ? row.threadId : null;
+    return {
+      // No row yet = AI on by default (it just hasn't answered anything yet).
+      aiEnabled: row === null ? true : row.aiEnabled,
+      threadId,
+    };
+  },
+});
+
+/**
+ * Streaming-aware Agent message list for the widget. Returns the in-flight
+ * stream deltas (and persisted Agent messages) for the conversation's AI thread
+ * so `useThreadMessages(..., { stream: true })` renders tokens live.
+ *
+ * The `threadId` arg is required by the `useThreadMessages` hook contract, but
+ * it is NOT trusted: we re-verify (a) the visitor owns the conversation and
+ * (b) the conversation's server-side thread mapping equals the supplied
+ * threadId and (c) the Agent thread is owned by this workspace (userId ===
+ * orgId). A forged threadId therefore can never read another tenant's thread.
+ */
+export const listAiThread = query({
+  args: {
+    publicKey: v.string(),
+    token: v.string(),
+    conversationId: v.id("conversations"),
+    threadId: v.string(),
+    paginationOpts: paginationOptsValidator,
+    streamArgs: v.optional(vStreamArgs),
+  },
+  handler: async (ctx, args) => {
+    const { workspace, session } = await authorizeVisitor(
+      ctx,
+      args.publicKey,
+      args.token,
+    );
+    const conversation = await ctx.db.get(args.conversationId);
+    if (
+      conversation === null ||
+      conversation.orgId !== workspace.orgId ||
+      conversation.visitorId !== session._id
+    ) {
+      throw new Error("Conversation not found");
+    }
+
+    const row = await ctx.db
+      .query("conversationThreads")
+      .withIndex("by_conversation", (q) =>
+        q.eq("conversationId", args.conversationId),
+      )
+      .unique();
+
+    // No thread yet (no row / placeholder), or the supplied threadId doesn't
+    // match this conversation's server-side mapping — return an empty page so
+    // the hook stays happy and no cross-thread read is possible.
+    if (
+      row === null ||
+      row.threadId.length === 0 ||
+      row.threadId !== args.threadId
+    ) {
+      return {
+        page: [],
+        isDone: true,
+        continueCursor: "",
+        streams: await syncStreams(ctx, components.agent, {
+          threadId: args.threadId,
+          streamArgs: args.streamArgs,
+        }),
+      };
+    }
+
+    // Tenant check: the Agent thread must be owned by this workspace.
+    const thread = await ctx.runQuery(components.agent.threads.getThread, {
+      threadId: row.threadId,
+    });
+    if (thread === null || thread.userId !== workspace.orgId) {
+      throw new Error("Thread not found");
+    }
+
+    const threadArgs = {
+      threadId: row.threadId,
+      paginationOpts: args.paginationOpts,
+      streamArgs: args.streamArgs,
+    };
+    const paginated = await listAgentMessages(
+      ctx,
+      components.agent,
+      threadArgs,
+    );
+    const streams = await syncStreams(ctx, components.agent, threadArgs);
+    return { ...paginated, streams };
+  },
+});
+// ===== END PHASE 7 =====
 
 // Shared upsert for presence/typing rows. Kept local (not exported) — the
 // agent-side mirror lives in convex/inbox.ts with its own copy to avoid a

@@ -9,7 +9,14 @@ import {
 } from "react";
 import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
-import { Send } from "lucide-react";
+import { Send, Sparkles } from "lucide-react";
+// ===== PHASE 7: Agent streaming hooks for the live AI answer. =====
+import {
+  useThreadMessages,
+  useSmoothText,
+  toUIMessages,
+} from "@convex-dev/agent/react";
+// ===== END PHASE 7 =====
 
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -91,11 +98,55 @@ export function WidgetApp() {
     conversationId ? { publicKey, token, conversationId } : "skip",
   );
 
+  // ===== PHASE 7: AI status + live streaming of the AI answer. =====
+  // `aiStatus` tells us whether AI is enabled (vs human takeover) and the Agent
+  // threadId to stream from. `useThreadMessages` streams the in-flight answer
+  // token-by-token; we only render the message while it is actively streaming —
+  // the finished answer is persisted as an authorType "ai" row in `messages`.
+  const aiStatus = useQuery(
+    api.widget.aiStatus,
+    conversationId ? { publicKey, token, conversationId } : "skip",
+  );
+
+  const aiThread = useThreadMessages(
+    api.widget.listAiThread,
+    conversationId && aiStatus?.threadId
+      ? { publicKey, token, conversationId, threadId: aiStatus.threadId }
+      : "skip",
+    { initialNumItems: 20, stream: true },
+  );
+
+  // The single currently-streaming assistant message (if any).
+  const streamingAi = useMemo(() => {
+    const ui = toUIMessages(aiThread.results ?? []);
+    const last = ui[ui.length - 1];
+    if (
+      last &&
+      last.role === "assistant" &&
+      last.status === "streaming" &&
+      (last.text ?? "").trim().length > 0
+    ) {
+      return last.text ?? "";
+    }
+    return null;
+  }, [aiThread.results]);
+  // ===== END PHASE 7 =====
+
   // Newest-first from the server → reverse for chronological display.
   const messages = useMemo(() => {
     if (!messagesResult) return [];
     return [...messagesResult.page].reverse();
   }, [messagesResult]);
+
+  // ===== PHASE 7: show a "thinking" indicator after a visitor message while
+  // the AI is enabled and hasn't produced an answer bubble yet. =====
+  const aiThinking = useMemo(() => {
+    if (!aiStatus?.aiEnabled) return false;
+    if (streamingAi) return false; // already streaming visible text
+    const last = messages[messages.length - 1];
+    return last?.authorType === "visitor";
+  }, [aiStatus?.aiEnabled, streamingAi, messages]);
+  // ===== END PHASE 7 =====
 
   // Presence heartbeat while the widget is mounted.
   useEffect(() => {
@@ -132,7 +183,7 @@ export function WidgetApp() {
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages.length, activity?.agentTyping]);
+  }, [messages.length, activity?.agentTyping, streamingAi, aiThinking]);
 
   // Report unread (agent) messages to the parent embed for the launcher badge.
   const reportedUnread = useRef(0);
@@ -195,12 +246,21 @@ export function WidgetApp() {
             </p>
           </div>
         ) : (
-          messages.map((m) => (
-            <Bubble key={m._id} mine={m.authorType === "visitor"}>
-              {m.body}
-            </Bubble>
-          ))
+          messages.map((m) =>
+            m.authorType === "ai" ? (
+              // ===== PHASE 7: persisted AI answer + citations. =====
+              <AiBubble key={m._id} body={m.body} sources={m.sources} />
+            ) : (
+              <Bubble key={m._id} mine={m.authorType === "visitor"}>
+                {m.body}
+              </Bubble>
+            ),
+          )
         )}
+        {/* ===== PHASE 7: live streaming AI answer (token-by-token). ===== */}
+        {streamingAi && <StreamingAiBubble text={streamingAi} />}
+        {aiThinking && <AiThinkingBubble />}
+        {/* ===== END PHASE 7 ===== */}
         {activity?.agentTyping && <TypingBubble />}
       </div>
 
@@ -339,3 +399,78 @@ function CenteredNote({ text }: { text: string }) {
     </div>
   );
 }
+
+// ===========================================================================
+// ===== PHASE 7: AI answer rendering (persisted + live stream + thinking) ====
+// ===========================================================================
+
+type Source = { entryId: string; title?: string; score: number };
+
+/** A finished, persisted AI answer with its source citations. */
+function AiBubble({ body, sources }: { body: string; sources?: Source[] }) {
+  return (
+    <div className="flex flex-col items-start gap-1">
+      <div className="max-w-[78%] whitespace-pre-wrap break-words rounded-2xl rounded-bl-sm border border-indigo-500/40 bg-zinc-800 px-3 py-2 text-sm text-zinc-100">
+        <span className="mb-1 flex items-center gap-1 text-[11px] font-medium text-indigo-300">
+          <Sparkles className="size-3" />
+          AI assistant
+        </span>
+        {body}
+      </div>
+      <Citations sources={sources} />
+    </div>
+  );
+}
+
+/** The AI answer as it streams in, smoothed token-by-token. */
+function StreamingAiBubble({ text }: { text: string }) {
+  const [smooth] = useSmoothText(text, { startStreaming: true });
+  return (
+    <div className="flex flex-col items-start gap-1">
+      <div className="max-w-[78%] whitespace-pre-wrap break-words rounded-2xl rounded-bl-sm border border-indigo-500/40 bg-zinc-800 px-3 py-2 text-sm text-zinc-100">
+        <span className="mb-1 flex items-center gap-1 text-[11px] font-medium text-indigo-300">
+          <Sparkles className="size-3 animate-pulse" />
+          AI assistant
+        </span>
+        {smooth}
+        <span className="ml-0.5 inline-block h-3.5 w-0.5 animate-pulse bg-indigo-300 align-middle" />
+      </div>
+    </div>
+  );
+}
+
+/** Placeholder while the AI is retrieving + composing an answer. */
+function AiThinkingBubble() {
+  return (
+    <div className="flex justify-start">
+      <div className="flex items-center gap-2 rounded-2xl rounded-bl-sm border border-indigo-500/40 bg-zinc-800 px-3 py-2.5 text-xs text-indigo-200">
+        <Sparkles className="size-3.5 animate-pulse" />
+        <span className="flex items-center gap-1">
+          Thinking
+          <Dot delay="0ms" />
+          <Dot delay="150ms" />
+          <Dot delay="300ms" />
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/** Cited source chips beneath an AI answer. */
+function Citations({ sources }: { sources?: Source[] }) {
+  if (!sources || sources.length === 0) return null;
+  return (
+    <div className="flex max-w-[90%] flex-wrap items-center gap-1 pl-1">
+      <span className="text-[10px] font-medium text-zinc-500">Sources:</span>
+      {sources.map((s) => (
+        <span
+          key={s.entryId}
+          className="inline-flex items-center gap-1 rounded-full bg-zinc-700/70 px-2 py-0.5 text-[10px] text-zinc-200"
+        >
+          {s.title ?? "Untitled"}
+        </span>
+      ))}
+    </div>
+  );
+}
+// ===== END PHASE 7 =====
